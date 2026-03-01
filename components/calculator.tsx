@@ -8,7 +8,7 @@ import {
   Download,
   Loader2,
 } from "lucide-react";
-import html2canvas from "html2canvas";
+import { toPng } from "html-to-image";
 import jsPDF from "jspdf";
 import Image from "next/image";
 
@@ -46,7 +46,6 @@ export function Calculator() {
   const reportRef = useRef<HTMLDivElement>(null);
 
   // Constants
-  const LICENSE_COST = 1500;
   const K_EFF = 0.7; // 70% of search time saved
   const ONBOARDING_ACCEL = 0.3; // 30% faster onboarding
   const EXPERT_SHARE = 0.1; // 10% are experts
@@ -66,10 +65,9 @@ export function Calculator() {
     EXPERT_TIME_SAVED;
 
   const totalSavings = searchSavings + onboardingSavings + expertSavings;
-  const totalCost = employees * LICENSE_COST * 12;
-  const paybackPeriod = totalCost > 0 ? (totalCost / totalSavings) * 12 : 0;
+  const targetRoi = 3; // 300%
+  const maxProjectCost = totalSavings / (targetRoi + 1);
   const hoursFreed = employees * 160 * searchTimePercent * K_EFF;
-  const roi = ((totalSavings - totalCost) / totalCost) * 100;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("ru-RU", {
@@ -79,9 +77,12 @@ export function Calculator() {
     }).format(value);
   };
 
-  const generateReport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) return;
+  const generateReport = async (e?: React.FormEvent | React.MouseEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
+    if (!email) {
+      alert("Пожалуйста, введите ваш рабочий E-mail");
+      return;
+    }
 
     setIsGenerating(true);
     try {
@@ -90,14 +91,15 @@ export function Calculator() {
 
       // 2. Capture the report div
       if (reportRef.current) {
-        const canvas = await html2canvas(reportRef.current, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
+        const imgData = await toPng(reportRef.current, {
+          pixelRatio: 2,
           backgroundColor: "#ffffff",
+          style: {
+            transform: "scale(1)",
+            transformOrigin: "top left",
+          },
         });
 
-        const imgData = canvas.toDataURL("image/png");
         const pdf = new jsPDF({
           orientation: "portrait",
           unit: "mm",
@@ -105,7 +107,11 @@ export function Calculator() {
         });
 
         const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        // We need to calculate the height based on the aspect ratio.
+        // Since we don't have the canvas dimensions directly, we can get the element's dimensions.
+        const elWidth = reportRef.current.offsetWidth;
+        const elHeight = reportRef.current.offsetHeight;
+        const pdfHeight = (elHeight * pdfWidth) / elWidth;
 
         pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
         pdf.save("ROI_Report_II_Kollektiv.pdf");
@@ -279,10 +285,10 @@ export function Calculator() {
                 </div>
                 <div>
                   <div className="text-indigo-200 text-sm mb-1">
-                    Окупаемость (Payback)
+                    Бюджет для ROI 300%
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {paybackPeriod.toFixed(1)} мес.
+                    <AnimatedNumber value={maxProjectCost} />
                   </div>
                 </div>
               </div>
@@ -356,21 +362,25 @@ export function Calculator() {
                 </div>
               </div>
 
-              <form
-                onSubmit={generateReport}
-                className="flex flex-col sm:flex-row gap-3"
-              >
+              <div className="flex flex-col sm:flex-row gap-3">
                 <input
                   type="email"
                   required
                   placeholder="Ваш рабочий E-mail"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      generateReport(e);
+                    }
+                  }}
                   className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                 />
                 <button
-                  type="submit"
-                  disabled={isGenerating}
+                  type="button"
+                  onClick={generateReport}
+                  disabled={isGenerating || !email}
                   className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isGenerating ? (
@@ -385,7 +395,7 @@ export function Calculator() {
                     </>
                   )}
                 </button>
-              </form>
+              </div>
             </div>
           </motion.div>
         </div>
@@ -493,22 +503,22 @@ export function Calculator() {
                 </tr>
                 <tr>
                   <td style={{ border: "1px solid #e2e8f0", padding: "12px" }}>
-                    Окупаемость инвестиций (Payback Period)
+                    Целевой ROI (1 год)
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "12px", fontWeight: "bold" }}
                   >
-                    {paybackPeriod.toFixed(1)} месяцев
+                    300%
                   </td>
                 </tr>
                 <tr>
                   <td style={{ border: "1px solid #e2e8f0", padding: "12px" }}>
-                    Прогнозируемый ROI (1 год)
+                    Максимальный бюджет проекта (для достижения ROI 300%)
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "12px", fontWeight: "bold", color: "#059669" }}
                   >
-                    {Math.round(roi)}%
+                    {formatCurrency(maxProjectCost)}
                   </td>
                 </tr>
               </tbody>
@@ -706,27 +716,42 @@ export function Calculator() {
             </p>
           </div>
 
-          <div
-            style={{ padding: "24px", borderRadius: "8px", border: "1px solid #e0e7ff", backgroundColor: "#eef2ff" }}
-          >
-            <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "8px", color: "#312e81" }}>
-              Следующий шаг: Бесплатный Пилот (Proof of Concept)
-            </h2>
-            <p style={{ fontSize: "14px", marginBottom: "8px" }}>
-              Для подтверждения расчетных цифр предлагается проведение пилотного
-              проекта на ограниченном массиве данных (1-2 департамента):
-            </p>
-            <ul style={{ paddingLeft: "20px", fontSize: "14px", marginBottom: "16px" }}>
-              <li>
-                <strong>Срок:</strong> 14 дней.
-              </li>
-              <li>
-                <strong>Результат:</strong> Отчет о фактическом сокращении
-                времени на поиск и точности ответов ИИ на реальных документах
-                компании.
-              </li>
-            </ul>
-          </div>
+            <div
+              style={{ padding: "24px", borderRadius: "8px", border: "1px solid #e0e7ff", backgroundColor: "#eef2ff", marginBottom: "32px" }}
+            >
+              <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "8px", color: "#312e81" }}>
+                Следующий шаг: Бесплатный Пилот (Proof of Concept)
+              </h2>
+              <p style={{ fontSize: "14px", marginBottom: "8px" }}>
+                Для подтверждения расчетных цифр предлагается проведение пилотного
+                проекта на ограниченном массиве данных (1-2 департамента):
+              </p>
+              <ul style={{ paddingLeft: "20px", fontSize: "14px", marginBottom: "16px" }}>
+                <li>
+                  <strong>Срок:</strong> 14 дней.
+                </li>
+                <li>
+                  <strong>Результат:</strong> Отчет о фактическом сокращении
+                  времени на поиск и точности ответов ИИ на реальных документах
+                  компании.
+                </li>
+              </ul>
+            </div>
+
+            <div
+              style={{ padding: "24px", borderRadius: "8px", border: "1px solid #e2e8f0", backgroundColor: "#f8fafc", textAlign: "center" }}
+            >
+              <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "8px", color: "#0f172a" }}>
+                Готовы обсудить ваш кейс?
+              </h2>
+              <p style={{ fontSize: "14px", marginBottom: "16px", color: "#475569" }}>
+                Свяжитесь с нами для проведения точного расчета стоимости внедрения и оценки эффектов для вашей компании.
+              </p>
+              <div style={{ fontSize: "16px", fontWeight: "bold", color: "#4f46e5" }}>
+                <p style={{ marginBottom: "4px" }}>Сайт: ai-kollektiv.ru</p>
+                <p>Email: hello@ai-kollektiv.ru</p>
+              </div>
+            </div>
         </div>
       </div>
     </section>

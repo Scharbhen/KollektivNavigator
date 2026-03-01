@@ -5,20 +5,20 @@ import { XCircle, CheckCircle2 } from "lucide-react";
 
 const comparisonData = [
   {
-    traditional: "Нужно вручную вбивать теги и раскладывать файлы",
-    ai: "Сам понимает содержание любого документа",
+    traditional: "Сотрудники тратят часы на заполнение карточек и метаданных в СЭД",
+    ai: "Полный уход от ручной работы — ИИ сам извлекает данные в нужной структуре",
   },
   {
-    traditional: "Ищет только по точному совпадению слов",
-    ai: "Понимает смысл запроса (семантический поиск)",
+    traditional: "Информация теряется в разрозненных «файлопомойках» и архивах",
+    ai: "Единая точка доступа ко всем знаниям компании без переноса файлов",
   },
   {
-    traditional: "Сотрудники тратят 20% времени на поиск данных",
-    ai: "Ответ на любой вопрос за 2 секунды",
+    traditional: "Поиск работает только по точным совпадениям и названиям",
+    ai: "Система понимает смысл запроса и контекст документа",
   },
   {
-    traditional: "Информация «умирает» в архивах",
-    ai: "Знания компании всегда под рукой",
+    traditional: "Анализ и сбор данных для отчетов делается вручную",
+    ai: "Мгновенный синтез ответов и сборка данных из десятков источников",
   },
 ];
 
@@ -28,10 +28,10 @@ export function Comparison() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-display font-bold text-white mb-4">
-            Сравнение: Почему теги больше не нужны?
+            Конец эпохи ручного ввода данных
           </h2>
-          <p className="text-lg text-slate-400">
-            Переход от ручного управления к семантическому поиску.
+          <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+            Подключите любую «файлопомойку» или СЭД и получайте структурированные данные без необходимости заполнять карточки документов.
           </p>
         </div>
 
@@ -70,7 +70,7 @@ export function Comparison() {
                 <span className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 border border-indigo-500/30">
                   <CheckCircle2 className="w-5 h-5" />
                 </span>
-                ИИ Коллектив (Glean-model)
+                ИИ Коллектив (AI-поиск)
               </h3>
               <ul className="space-y-6 relative z-10">
                 {comparisonData.map((item, index) => (

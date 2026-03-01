@@ -115,8 +115,8 @@ export function InteractiveDemo({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, isAiTyping]);
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleEmailSubmit = (e?: React.FormEvent | React.MouseEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
       setEmailError("Введите корректный email");
       return;
@@ -239,7 +239,7 @@ export function InteractiveDemo({
                   </p>
                 </div>
 
-                <form onSubmit={handleEmailSubmit} className="space-y-4">
+                <div className="space-y-4">
                   <div>
                     <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
                       Рабочий Email
@@ -249,6 +249,12 @@ export function InteractiveDemo({
                       id="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleEmailSubmit(e);
+                        }
+                      }}
                       placeholder="name@company.com"
                       className={`w-full px-4 py-3 rounded-xl border ${
                         emailError ? "border-red-300 focus:ring-red-500" : "border-slate-200 focus:ring-indigo-500"
@@ -257,12 +263,13 @@ export function InteractiveDemo({
                     {emailError && <p className="mt-1 text-sm text-red-500">{emailError}</p>}
                   </div>
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={handleEmailSubmit}
                     className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
                   >
                     Продолжить <ChevronRight className="w-4 h-4" />
                   </button>
-                </form>
+                </div>
               </motion.div>
             )}
 
@@ -481,29 +488,30 @@ export function InteractiveDemo({
                         </button>
                       ))}
                     </div>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleSendMessage(chatInput);
-                      }}
-                      className="flex gap-2"
-                    >
+                    <div className="flex gap-2">
                       <input
                         type="text"
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSendMessage(chatInput);
+                          }
+                        }}
                         placeholder="Задайте вопрос по документу..."
                         disabled={isAiTyping}
                         className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-sm text-slate-900 disabled:opacity-50"
                       />
                       <button
-                        type="submit"
+                        type="button"
+                        onClick={() => handleSendMessage(chatInput)}
                         disabled={!chatInput.trim() || isAiTyping}
                         className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:hover:bg-indigo-600 flex items-center justify-center"
                       >
                         <Send className="w-4 h-4" />
                       </button>
-                    </form>
+                    </div>
                   </div>
                 </div>
               </motion.div>

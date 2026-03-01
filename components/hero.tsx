@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "motion/react";
-import { Search, ArrowRight, Sparkles, FileUp } from "lucide-react";
+import { Search, ArrowRight, Sparkles, FileUp, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import { InteractiveDemo } from "./interactive-demo";
 
@@ -23,10 +23,13 @@ export function Hero() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-indigo-300 mb-8"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-slate-300 mb-8"
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Российский аналог Glean для Enterprise</span>
+            <Sparkles className="w-4 h-4 text-indigo-400" />
+            <span>AI-поиск для любого бизнеса</span>
+            <span className="w-1 h-1 rounded-full bg-slate-600 mx-1 hidden sm:inline-block" />
+            <ShieldCheck className="w-4 h-4 text-emerald-400 hidden sm:inline-block" />
+            <span className="hidden sm:inline-block">В Реестре Российского ПО</span>
           </motion.div>
 
           <motion.h1
@@ -83,75 +86,90 @@ export function Hero() {
           </motion.div>
         </div>
 
-        {/* Mockup / Visual */}
+        {/* Infographic / How it works */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.6 }}
-          className="mt-20 relative mx-auto max-w-5xl"
+          className="mt-24 relative mx-auto max-w-5xl"
         >
-          <div className="rounded-2xl border border-white/10 bg-slate-900/50 backdrop-blur-sm p-2 shadow-2xl overflow-hidden">
-            <div className="rounded-xl overflow-hidden border border-white/5 bg-slate-950 relative aspect-[16/9]">
-              {/* Fake UI Header */}
-              <div className="absolute top-0 left-0 right-0 h-12 border-b border-white/10 bg-slate-900 flex items-center px-4 gap-2">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-green-500/80" />
-                </div>
-                <div className="mx-auto w-1/2 h-6 bg-slate-800 rounded-md flex items-center px-3 gap-2">
-                  <Search className="w-3 h-3 text-slate-500" />
-                  <span className="text-xs text-slate-500 font-mono">
-                    Где лежит регламент по закупкам?
-                  </span>
-                </div>
+          <div className="text-center mb-12">
+            <h3 className="text-2xl md:text-3xl font-display font-bold text-white mb-4">
+              Как работает ИИ Коллектив
+            </h3>
+            <p className="text-slate-400 max-w-2xl mx-auto">
+              Интеллектуальный слой, который объединяет ваши данные, понимает их смысл и выдает готовые ответы с учетом прав доступа.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8 relative">
+            {/* Connecting Lines (Desktop only) */}
+            <div className="hidden md:block absolute top-1/2 left-[16%] right-[16%] h-0.5 bg-gradient-to-r from-indigo-500/20 via-emerald-500/20 to-indigo-500/20 -translate-y-1/2 z-0" />
+            <div className="hidden md:block absolute top-1/2 left-[33%] w-4 h-4 rounded-full bg-indigo-500/50 -translate-y-1/2 -translate-x-1/2 z-0 animate-pulse" />
+            <div className="hidden md:block absolute top-1/2 left-[66%] w-4 h-4 rounded-full bg-emerald-500/50 -translate-y-1/2 -translate-x-1/2 z-0 animate-pulse" />
+
+            {/* Step 1: Sources */}
+            <div className="relative z-10 bg-slate-900/80 backdrop-blur-sm border border-white/10 rounded-3xl p-8 flex flex-col items-center text-center shadow-xl">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-6">
+                <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                </svg>
               </div>
-              {/* Fake UI Content */}
-              <div className="absolute top-12 left-0 right-0 bottom-0 p-8 flex flex-col gap-6">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex flex-shrink-0 items-center justify-center border border-indigo-500/30">
-                    <Sparkles className="w-5 h-5 text-indigo-400" />
-                  </div>
-                  <div className="flex-1 bg-slate-800/50 rounded-2xl rounded-tl-none p-6 border border-white/5">
-                    <p className="text-slate-300 text-sm leading-relaxed mb-4">
-                      Согласно{" "}
-                      <span className="text-indigo-400 bg-indigo-400/10 px-1 rounded">
-                        Регламенту закупок v2.4
-                      </span>{" "}
-                      от 12.03.2024, процесс закупки начинается с подачи заявки
-                      в Jira.
-                      <br />
-                      <br />
-                      Ключевые шаги:
-                      <br />
-                      1. Согласование бюджета с фин. отделом (до 3 дней)
-                      <br />
-                      2. Сбор коммерческих предложений (минимум 3)
-                      <br />
-                      3. Подписание договора по типовой форме
-                    </p>
-                    <div className="flex gap-2">
-                      <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-white/5">
-                        <div className="w-4 h-4 rounded bg-blue-500/20 flex items-center justify-center">
-                          <span className="text-[10px] text-blue-400">W</span>
-                        </div>
-                        <span className="text-xs text-slate-400">
-                          Регламент_закупок_2024.docx
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-white/5">
-                        <div className="w-4 h-4 rounded bg-yellow-500/20 flex items-center justify-center">
-                          <span className="text-[10px] text-yellow-400">
-                            1C
-                          </span>
-                        </div>
-                        <span className="text-xs text-slate-400">
-                          Справочник контрагентов
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              <h4 className="text-lg font-bold text-white mb-3">1. Подключение баз</h4>
+              <p className="text-sm text-slate-400 mb-6">
+                Безопасная интеграция с вашими текущими системами без переноса данных.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <span className="px-2 py-1 bg-slate-800 rounded text-xs text-slate-300 border border-white/5">1C:Предприятие</span>
+                <span className="px-2 py-1 bg-slate-800 rounded text-xs text-slate-300 border border-white/5">Почта / Exchange</span>
+                <span className="px-2 py-1 bg-slate-800 rounded text-xs text-slate-300 border border-white/5">Сетевые папки</span>
+                <span className="px-2 py-1 bg-slate-800 rounded text-xs text-slate-300 border border-white/5">Jira / Confluence</span>
+              </div>
+            </div>
+
+            {/* Step 2: AI Engine */}
+            <div className="relative z-10 bg-gradient-to-b from-indigo-900/40 to-slate-900/80 backdrop-blur-sm border border-indigo-500/30 rounded-3xl p-8 flex flex-col items-center text-center shadow-2xl transform md:-translate-y-4">
+              <div className="absolute -top-3 px-3 py-1 bg-indigo-500 rounded-full text-[10px] font-bold text-white uppercase tracking-wider">
+                Ядро системы
+              </div>
+              <div className="w-20 h-20 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center mb-6 relative">
+                <div className="absolute inset-0 bg-indigo-500/20 blur-xl rounded-full" />
+                <Sparkles className="w-10 h-10 text-indigo-300 relative z-10" />
+              </div>
+              <h4 className="text-lg font-bold text-white mb-3">2. Нейро-индексация</h4>
+              <p className="text-sm text-indigo-200/70 mb-6">
+                ИИ читает документы, понимает контекст, извлекает сущности и строит граф связей.
+              </p>
+              <ul className="text-left text-sm text-slate-300 space-y-2 w-full">
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>VLM-зрение (вместо OCR)</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>Векторный поиск по смыслу</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>Строгий контроль прав (ACL)</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Step 3: User UI */}
+            <div className="relative z-10 bg-slate-900/80 backdrop-blur-sm border border-white/10 rounded-3xl p-8 flex flex-col items-center text-center shadow-xl">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-6">
+                <Search className="w-8 h-8 text-emerald-400" />
+              </div>
+              <h4 className="text-lg font-bold text-white mb-3">3. Мгновенный ответ</h4>
+              <p className="text-sm text-slate-400 mb-6">
+                Сотрудник задает вопрос естественным языком и получает синтезированный ответ со ссылками.
+              </p>
+              <div className="w-full bg-slate-950 rounded-xl p-3 border border-white/5 text-left">
+                <div className="text-xs text-slate-500 mb-1">Запрос:</div>
+                <div className="text-sm text-white mb-3">Какие условия возврата по договору с ООО &quot;Альфа&quot;?</div>
+                <div className="text-xs text-slate-500 mb-1">Ответ ИИ:</div>
+                <div className="text-sm text-emerald-400">Возврат возможен в течение 14 дней (п. 4.2 Договора №18 от 12.05.2023).</div>
               </div>
             </div>
           </div>

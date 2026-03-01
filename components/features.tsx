@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Search, MessageSquare, UserPlus } from "lucide-react";
+import { Search, MessageSquare, UserPlus, Brain } from "lucide-react";
 
 const features = [
   {
@@ -21,6 +21,15 @@ const features = [
     color: "text-emerald-400",
     bg: "bg-emerald-400/10",
     border: "border-emerald-400/20",
+  },
+  {
+    title: "Умнее, чем OCR (VLM-движок)",
+    description:
+      "Система работает как умный стажер: читает и понимает любые форматы (сложные таблицы, кривые сканы, фото), а не таскает данные по жесткому алгоритму. Захотели извлекать новые данные? Не нужно пере-внедрять систему — просто задайте новый вопрос.",
+    icon: Brain,
+    color: "text-amber-400",
+    bg: "bg-amber-400/10",
+    border: "border-amber-400/20",
   },
   {
     title: "ИИ Онбординг",
@@ -49,7 +58,7 @@ export function Features() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid md:grid-cols-2 gap-8">
           {features.map((feature, index) => (
             <motion.div
               key={index}
