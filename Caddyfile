@@ -1,0 +1,3 @@
+navigator.sapsan17.ru {
+    reverse_proxy web:3000
+}

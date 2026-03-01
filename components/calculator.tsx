@@ -85,14 +85,7 @@ export function Calculator() {
 
     setIsGenerating(true);
     try {
-      // 1. Generate the image via API
-      const res = await fetch("/api/generate-image", { method: "POST" });
-      const data = await res.json();
-      if (data.image) {
-        setGeneratedImage(data.image);
-      }
-
-      // Wait a moment for the image to render in the hidden div
+      // Wait a moment for the layout to settle
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // 2. Capture the report div
@@ -695,19 +688,18 @@ export function Calculator() {
             <div
               style={{ width: "100%", height: "256px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e2e8f0", overflow: "hidden", position: "relative", backgroundColor: "#f1f5f9" }}
             >
-              {generatedImage ? (
-                <Image
-                  src={generatedImage}
-                  alt="До и После"
-                  fill
-                  style={{ objectFit: "cover" }}
-                  unoptimized
-                />
-              ) : (
-                <span style={{ color: "#94a3b8" }}>
-                  Генерация изображения...
-                </span>
-              )}
+              <div style={{ textAlign: "center", padding: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "32px", width: "100%" }}>
+                  <div style={{ flex: 1, backgroundColor: "#fee2e2", padding: "16px", borderRadius: "8px", border: "1px solid #fca5a5" }}>
+                    <h4 style={{ color: "#991b1b", fontWeight: "bold", marginBottom: "8px" }}>До внедрения</h4>
+                    <p style={{ color: "#7f1d1d", fontSize: "14px" }}>Хаос в данных, долгий поиск, разрозненные источники, потеря экспертизы при увольнении.</p>
+                  </div>
+                  <div style={{ flex: 1, backgroundColor: "#d1fae5", padding: "16px", borderRadius: "8px", border: "1px solid #6ee7b7" }}>
+                    <h4 style={{ color: "#065f46", fontWeight: "bold", marginBottom: "8px" }}>После внедрения</h4>
+                    <p style={{ color: "#064e3b", fontSize: "14px" }}>Единая точка доступа, мгновенные ответы, сохранение знаний, автоматизация рутины.</p>
+                  </div>
+                </div>
+              </div>
             </div>
             <p style={{ fontSize: "12px", marginTop: "8px", textAlign: "right", color: "#94a3b8" }}>
               Автор: Система ИИ Коллектив
