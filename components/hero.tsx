@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { Search, ArrowRight, Sparkles, FileUp, ShieldCheck } from "lucide-react";
 import Image from "next/image";
@@ -8,6 +8,12 @@ import { InteractiveDemo } from "./interactive-demo";
 
 export function Hero() {
   const [isDemoOpen, setIsDemoOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenDemo = () => setIsDemoOpen(true);
+    window.addEventListener('open-demo', handleOpenDemo);
+    return () => window.removeEventListener('open-demo', handleOpenDemo);
+  }, []);
 
   return (
     <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">

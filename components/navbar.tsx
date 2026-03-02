@@ -65,7 +65,10 @@ export function Navbar() {
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
-            <button className="px-4 py-2 text-sm font-medium bg-white text-slate-900 rounded-full hover:bg-slate-200 transition-colors">
+            <button 
+              onClick={() => window.dispatchEvent(new Event('open-demo'))}
+              className="px-4 py-2 text-sm font-medium bg-white text-slate-900 rounded-full hover:bg-slate-200 transition-colors"
+            >
               Демо
             </button>
           </div>
@@ -122,7 +125,13 @@ export function Navbar() {
               Решения
             </Link>
             <hr className="border-white/10" />
-            <button className="w-full px-4 py-2 text-sm font-medium bg-white text-slate-900 rounded-full hover:bg-slate-200 transition-colors">
+            <button 
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                window.dispatchEvent(new Event('open-demo'));
+              }}
+              className="w-full px-4 py-2 text-sm font-medium bg-white text-slate-900 rounded-full hover:bg-slate-200 transition-colors"
+            >
               Записаться на демо
             </button>
           </div>

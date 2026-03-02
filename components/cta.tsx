@@ -43,7 +43,10 @@ export function CTA() {
           viewport={{ once: true }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <button className="px-8 py-4 bg-white text-slate-900 rounded-full font-bold text-lg hover:bg-slate-100 transition-colors inline-flex items-center justify-center gap-2 group shadow-[0_0_40px_rgba(255,255,255,0.2)]">
+          <button 
+            onClick={() => window.dispatchEvent(new Event('open-demo'))}
+            className="px-8 py-4 bg-white text-slate-900 rounded-full font-bold text-lg hover:bg-slate-100 transition-colors inline-flex items-center justify-center gap-2 group shadow-[0_0_40px_rgba(255,255,255,0.2)]"
+          >
             Записаться на демонстрацию
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </button>
