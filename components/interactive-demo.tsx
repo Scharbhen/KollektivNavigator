@@ -115,14 +115,27 @@ export function InteractiveDemo({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, isAiTyping]);
 
-  const handleEmailSubmit = (e?: React.FormEvent | React.MouseEvent | React.KeyboardEvent) => {
+  const handleEmailSubmit = async (e?: React.FormEvent | React.MouseEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
       setEmailError("Введите корректный email");
       return;
     }
     setEmailError("");
-    // TODO: API call to save lead
+    
+    try {
+      await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          source: "demo_start",
+        }),
+      });
+    } catch (e) {
+      console.error("Failed to save lead:", e);
+    }
+
     setStep("upload");
   };
 
@@ -134,11 +147,73 @@ export function InteractiveDemo({
     }
   };
 
-  const handleFileSelect = (selectedFile: File) => {
+  const handleFileSelect = async (selectedFile: File) => {
     if (!docType) return;
     setFile(selectedFile);
     setStep("processing");
-    simulateProcessing();
+
+    // Upload file
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("email", email);
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Start polling for results
+        pollResults(result.mediaId);
+      } else {
+        throw new Error(result.error || "Upload failed");
+      }
+    } catch (e) {
+      console.error("Failed to upload file:", e);
+      // Fallback to simulation if backend fails
+      simulateProcessing();
+    }
+  };
+
+  const pollResults = async (mediaId: string) => {
+    let attempts = 0;
+    const maxAttempts = 60; // 5 minutes max
+    
+    const interval = setInterval(async () => {
+      try {
+        attempts++;
+        const res = await fetch(`/api/results?mediaId=${mediaId}`);
+        const data = await res.json();
+        
+        if (data.status === "processing") {
+          // Update logs based on attempts to show progress
+          setProcessingLogIndex(Math.min(PROCESSING_LOGS.length - 2, Math.floor(attempts / 2)));
+        } else if (data.status === "completed") {
+          clearInterval(interval);
+          setProcessingLogIndex(PROCESSING_LOGS.length - 1);
+          setTimeout(() => {
+            setStep("result");
+            setChatHistory([
+              {
+                role: "ai",
+                text: "Документ успешно проанализирован. Вы можете задать мне вопросы по его содержимому.",
+              },
+            ]);
+            // Here we could also set the actual extracted metadata from data.result
+          }, 1000);
+        } else if (data.status === "error" || attempts >= maxAttempts) {
+          clearInterval(interval);
+          console.error("Processing failed or timed out");
+          // Fallback to simulation on error
+          simulateProcessing();
+        }
+      } catch (e) {
+        console.error("Polling error:", e);
+      }
+    }, 5000);
   };
 
   const simulateProcessing = () => {

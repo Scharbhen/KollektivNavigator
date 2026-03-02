@@ -30,7 +30,7 @@ function AnimatedNumber({ value }: { value: number }) {
 }
 
 export function Calculator() {
-  const [employees, setEmployees] = useState(100);
+  const [employees, setEmployees] = useState(30);
   const [salary, setSalary] = useState(150000);
   const [searchTime, setSearchTime] = useState(1.5);
   const [turnover, setTurnover] = useState(15);
@@ -115,6 +115,29 @@ export function Calculator() {
 
         pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
         pdf.save("ROI_Report_II_Kollektiv.pdf");
+
+        // Save lead data
+        try {
+          await fetch("/api/leads", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email,
+              source: "calculator",
+              metadata: {
+                employees,
+                salary,
+                searchTime,
+                turnover,
+                totalSavings,
+                maxProjectCost,
+                hoursFreed
+              }
+            }),
+          });
+        } catch (e) {
+          console.error("Failed to save lead:", e);
+        }
       }
     } catch (error) {
       console.error("Failed to generate report:", error);
@@ -171,7 +194,7 @@ export function Calculator() {
                 <input
                   type="range"
                   min="1"
-                  max="500"
+                  max="300"
                   step="1"
                   value={employees}
                   onChange={(e) => setEmployees(Number(e.target.value))}
