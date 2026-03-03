@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import amqp from "amqplib";
-import { processingResults } from "@/lib/store";
 
 const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
+const RESULTS_FILE = path.join(process.cwd(), "results_data.json");
 
 async function sendToRabbitMQ(mediaId: string, fileUrl: string) {
   const rabbitUrl = process.env.RABBITMQ_URL;
@@ -38,31 +38,8 @@ async function sendToRabbitMQ(mediaId: string, fileUrl: string) {
 
     console.log(`Sent to RabbitMQ [${targetQueue}]:`, message);
 
-    // Start listening for the response if not already listening
-    // Note: In a real app, this should be a long-running background worker
-    // For this demo, we'll set up a temporary consumer
-    channel.consume(replyQueue, (msg) => {
-      if (msg !== null) {
-        try {
-          const content = JSON.parse(msg.content.toString());
-          console.log(`Received from RabbitMQ [${replyQueue}]:`, content.id);
-          
-          if (content.id) {
-            processingResults.set(content.id, {
-              status: content.extraction_error ? "error" : "completed",
-              result: content
-            });
-          }
-          channel.ack(msg);
-        } catch (e) {
-          console.error("Error parsing RabbitMQ message:", e);
-          channel.nack(msg);
-        }
-      }
-    });
-
-    // Don't close connection immediately so the consumer can run
-    // connection.close();
+    // Close connection immediately as we're just publishing
+    setTimeout(() => connection.close(), 500);
     return true;
   } catch (error) {
     console.error("RabbitMQ error:", error);
@@ -102,8 +79,17 @@ export async function POST(req: Request) {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || new URL(req.url).origin;
     const fileUrl = `${baseUrl}/uploads/${filename}`;
     
-    // Initialize processing status
-    processingResults.set(mediaId, { status: "processing" });
+    // Initialize processing status in results_data.json
+    let results: Record<string, any> = {};
+    if (fs.existsSync(RESULTS_FILE)) {
+      try {
+        results = JSON.parse(fs.readFileSync(RESULTS_FILE, 'utf-8'));
+      } catch (e) {
+        console.error("Error reading results file", e);
+      }
+    }
+    results[mediaId] = { status: "processing", updatedAt: new Date().toISOString() };
+    fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
 
     // Try to send to RabbitMQ, but don't fail if it's not configured
     const rabbitSuccess = await sendToRabbitMQ(mediaId, fileUrl);
@@ -128,8 +114,10 @@ export async function POST(req: Request) {
 
       let leads = [];
       if (fs.existsSync(DATA_FILE)) {
-        const data = fs.readFileSync(DATA_FILE, "utf-8");
-        leads = JSON.parse(data);
+        try {
+          const data = fs.readFileSync(DATA_FILE, "utf-8");
+          leads = JSON.parse(data);
+        } catch(e) {}
       }
       leads.push(newLead);
       fs.writeFileSync(DATA_FILE, JSON.stringify(leads, null, 2));

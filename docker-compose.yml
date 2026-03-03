@@ -16,6 +16,19 @@ services:
       # Persist uploaded files and leads data
       - uploads_data:/app/public/uploads
       - leads_data:/app/leads_data.json
+      - results_data:/app/results_data.json
+    depends_on:
+      - rabbitmq
+
+  worker:
+    build: .
+    command: node worker.js
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - RABBITMQ_URL=amqp://extractor_user:RmqPass_2026_xYz@rabbitmq:5672
+    volumes:
+      - results_data:/app/results_data.json
     depends_on:
       - rabbitmq
 
@@ -51,4 +64,5 @@ volumes:
   caddy_config:
   uploads_data:
   leads_data:
+  results_data:
   rabbitmq_data:
