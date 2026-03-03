@@ -88,6 +88,7 @@ export function InteractiveDemo({
   const [file, setFile] = useState<File | null>(null);
   const [processingLogIndex, setProcessingLogIndex] = useState(0);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [extractedData, setExtractedData] = useState<any>(null);
   
   const [chatInput, setChatInput] = useState("");
   const [chatHistory, setChatHistory] = useState<{ role: "user" | "ai"; text: string }[]>([]);
@@ -105,6 +106,7 @@ export function InteractiveDemo({
       setDocType(null);
       setFile(null);
       setProcessingLogIndex(0);
+      setExtractedData(null);
       setChatHistory([]);
       setChatInput("");
     }
@@ -166,8 +168,12 @@ export function InteractiveDemo({
       const result = await response.json();
       
       if (result.success) {
-        // Start polling for results
-        pollResults(result.mediaId);
+        // Start polling for results if sent to RabbitMQ, otherwise simulate
+        if (result.rabbitMqSent) {
+          pollResults(result.mediaId);
+        } else {
+          simulateProcessing();
+        }
       } else {
         throw new Error(result.error || "Upload failed");
       }
@@ -194,6 +200,11 @@ export function InteractiveDemo({
         } else if (data.status === "completed") {
           clearInterval(interval);
           setProcessingLogIndex(PROCESSING_LOGS.length - 1);
+          
+          if (data.result) {
+            setExtractedData(data.result);
+          }
+          
           setTimeout(() => {
             setStep("result");
             setChatHistory([
@@ -256,7 +267,9 @@ export function InteractiveDemo({
         ...prev,
         {
           role: "ai",
-          text: `На основе загруженного документа (${file?.name || "документ"}), могу сообщить следующее: это демонстрационный ответ. В реальной системе здесь будет ответ RAG-пайплайна с цитатами из текста.`,
+          text: extractedData 
+            ? `На основе загруженного документа (${file?.name || "документ"}), я проанализировал реальные данные. Это демонстрационный ответ чата, но данные слева извлечены вашим экстрактором.`
+            : `На основе загруженного документа (${file?.name || "документ"}), могу сообщить следующее: это демонстрационный ответ. В реальной системе здесь будет ответ RAG-пайплайна с цитатами из текста.`,
         },
       ]);
     }, 1500);
@@ -490,13 +503,25 @@ export function InteractiveDemo({
                   </div>
                   <div className="p-4 overflow-y-auto flex-1">
                     <div className="space-y-3">
-                      {Object.entries(MOCK_METADATA[docType]).map(([key, value]) => (
+                      {Object.entries(
+                        extractedData?.extracted_data || 
+                        extractedData?.metadata || 
+                        (extractedData && typeof extractedData === 'object' && !extractedData.extracted_data ? extractedData : null) || 
+                        MOCK_METADATA[docType]
+                      ).map(([key, value]) => {
+                        // Skip internal fields if rendering raw extractedData
+                        if (key === 'media_id' || key === 'file_url' || key === 'reply_queue' || key === 'status') return null;
+                        
+                        // Handle nested objects or arrays gracefully
+                        const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+                        
+                        return (
                         <div key={key} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm group">
                           <div className="text-xs font-medium text-slate-500 mb-1">{key}</div>
                           <div className="text-sm text-slate-900 font-medium flex items-start justify-between gap-2">
-                            <span className="break-words">{value}</span>
+                            <span className="break-words">{displayValue}</span>
                             <button
-                              onClick={() => handleCopy(value, key)}
+                              onClick={() => handleCopy(displayValue, key)}
                               className="text-slate-400 hover:text-indigo-600 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                               title="Копировать"
                             >
@@ -504,7 +529,7 @@ export function InteractiveDemo({
                             </button>
                           </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   </div>
                 </div>

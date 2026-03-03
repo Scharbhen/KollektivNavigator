@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
-const RESULTS_FILE = path.join(process.cwd(), "results_data.json");
+const DATA_DIR = path.join(process.cwd(), "data");
+const RESULTS_FILE = path.join(DATA_DIR, "results_data.json");
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

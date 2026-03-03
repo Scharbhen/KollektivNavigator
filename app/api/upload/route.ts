@@ -4,7 +4,8 @@ import path from "path";
 import amqp from "amqplib";
 
 const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
-const RESULTS_FILE = path.join(process.cwd(), "results_data.json");
+const DATA_DIR = path.join(process.cwd(), "data");
+const RESULTS_FILE = path.join(DATA_DIR, "results_data.json");
 
 async function sendToRabbitMQ(mediaId: string, fileUrl: string) {
   const rabbitUrl = process.env.RABBITMQ_URL;
@@ -81,6 +82,9 @@ export async function POST(req: Request) {
     
     // Initialize processing status in results_data.json
     let results: Record<string, any> = {};
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
     if (fs.existsSync(RESULTS_FILE)) {
       try {
         results = JSON.parse(fs.readFileSync(RESULTS_FILE, 'utf-8'));
@@ -96,7 +100,7 @@ export async function POST(req: Request) {
 
     // Also log this as a lead if email is provided
     if (email) {
-      const DATA_FILE = path.join(process.cwd(), "leads_data.json");
+      const DATA_FILE = path.join(DATA_DIR, "leads_data.json");
       const newLead = {
         id: timestamp.toString(),
         email,

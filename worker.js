@@ -2,7 +2,8 @@ const amqp = require('amqplib');
 const fs = require('fs');
 const path = require('path');
 
-const RESULTS_FILE = path.join(process.cwd(), 'results_data.json');
+const DATA_DIR = path.join(process.cwd(), 'data');
+const RESULTS_FILE = path.join(DATA_DIR, 'results_data.json');
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
 
 async function startWorker() {
@@ -45,6 +46,9 @@ async function startWorker() {
         
         // Read existing results
         let results = {};
+        if (!fs.existsSync(DATA_DIR)) {
+          fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
         if (fs.existsSync(RESULTS_FILE)) {
           try {
             results = JSON.parse(fs.readFileSync(RESULTS_FILE, 'utf-8'));

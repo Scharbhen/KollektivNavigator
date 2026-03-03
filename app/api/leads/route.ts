@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
-const DATA_FILE = path.join(process.cwd(), "leads_data.json");
+const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_FILE = path.join(DATA_DIR, "leads_data.json");
 
 export async function GET() {
   try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
     if (!fs.existsSync(DATA_FILE)) {
       return NextResponse.json({ leads: [] });
     }
@@ -35,6 +39,9 @@ export async function POST(req: Request) {
     };
 
     let leads = [];
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
     if (fs.existsSync(DATA_FILE)) {
       const data = fs.readFileSync(DATA_FILE, "utf-8");
       leads = JSON.parse(data);

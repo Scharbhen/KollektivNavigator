@@ -14,8 +14,20 @@ services:
       - NEXT_PUBLIC_BASE_URL=http://212.113.98.130
     volumes:
       # Persist uploaded files and leads data
-      - uploads_data:/app/public/uploads
-      - leads_data:/app/leads_data.json
+      - uploads_data_v2:/app/public/uploads
+      - app_data_v2:/app/data
+    depends_on:
+      - rabbitmq
+
+  worker:
+    build: .
+    command: node worker.js
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - RABBITMQ_URL=amqp://extractor_user:RmqPass_2026_xYz@rabbitmq:5672
+    volumes:
+      - app_data_v2:/app/data
     depends_on:
       - rabbitmq
 
@@ -49,6 +61,6 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  uploads_data:
-  leads_data:
+  uploads_data_v2:
+  app_data_v2:
   rabbitmq_data:
