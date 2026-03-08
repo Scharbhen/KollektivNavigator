@@ -19,6 +19,7 @@ import {
 
 type Step = "email" | "upload" | "processing" | "result";
 type DocType = "contract" | "invoice" | "act" | "free" | null;
+type PipelineMode = "demo" | "real" | null;
 
 const DOC_TYPES = [
   { id: "contract", label: "Договор", icon: FileText, desc: "Извлечение сторон, сумм, сроков" },
@@ -89,6 +90,8 @@ export function InteractiveDemo({
   const [processingLogIndex, setProcessingLogIndex] = useState(0);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [extractedData, setExtractedData] = useState<any>(null);
+  const [pipelineMode, setPipelineMode] = useState<PipelineMode>(null);
+  const [processingError, setProcessingError] = useState<string | null>(null);
   
   const [chatInput, setChatInput] = useState("");
   const [chatHistory, setChatHistory] = useState<{ role: "user" | "ai"; text: string }[]>([]);
@@ -107,6 +110,8 @@ export function InteractiveDemo({
       setFile(null);
       setProcessingLogIndex(0);
       setExtractedData(null);
+      setPipelineMode(null);
+      setProcessingError(null);
       setChatHistory([]);
       setChatInput("");
     }
@@ -152,6 +157,7 @@ export function InteractiveDemo({
   const handleFileSelect = async (selectedFile: File) => {
     if (!docType) return;
     setFile(selectedFile);
+    setProcessingError(null);
     setStep("processing");
 
     // Upload file
@@ -167,20 +173,26 @@ export function InteractiveDemo({
       
       const result = await response.json();
       
-      if (result.success) {
-        // Start polling for results if sent to RabbitMQ, otherwise simulate
-        if (result.rabbitMqSent) {
-          pollResults(result.mediaId);
-        } else {
-          simulateProcessing();
-        }
-      } else {
-        throw new Error(result.error || "Upload failed");
+      if (!response.ok || !result.success) {
+        throw new Error(result.details || result.error || "Upload failed");
       }
+
+      const nextMode: PipelineMode = result.pipelineMode === "demo" ? "demo" : "real";
+      setPipelineMode(nextMode);
+
+      if (nextMode === "demo") {
+        simulateProcessing();
+        return;
+      }
+
+      pollResults(result.mediaId);
     } catch (e) {
       console.error("Failed to upload file:", e);
-      // Fallback to simulation if backend fails
-      simulateProcessing();
+      setProcessingError(
+        e instanceof Error
+          ? `Не удалось поставить задачу в очередь экстрактора: ${e.message}`
+          : "Не удалось поставить задачу в очередь экстрактора",
+      );
     }
   };
 
@@ -194,7 +206,11 @@ export function InteractiveDemo({
         const res = await fetch(`/api/results?mediaId=${mediaId}`);
         const data = await res.json();
         
-        if (data.status === "processing") {
+        if (res.status === 404 && attempts < 6) {
+          return;
+        }
+
+        if (data.status === "queued" || data.status === "processing") {
           // Update logs based on attempts to show progress
           setProcessingLogIndex(Math.min(PROCESSING_LOGS.length - 2, Math.floor(attempts / 2)));
         } else if (data.status === "completed") {
@@ -215,11 +231,12 @@ export function InteractiveDemo({
             ]);
             // Here we could also set the actual extracted metadata from data.result
           }, 1000);
-        } else if (data.status === "error" || attempts >= maxAttempts) {
+        } else if (data.status === "failed" || data.status === "error" || data.status === "publish_failed") {
           clearInterval(interval);
-          console.error("Processing failed or timed out");
-          // Fallback to simulation on error
-          simulateProcessing();
+          setProcessingError(data.error || "Экстрактор вернул ошибку обработки");
+        } else if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          setProcessingError("Превышено время ожидания ответа экстрактора");
         }
       } catch (e) {
         console.error("Polling error:", e);
@@ -269,7 +286,9 @@ export function InteractiveDemo({
           role: "ai",
           text: extractedData 
             ? `На основе загруженного документа (${file?.name || "документ"}), я проанализировал реальные данные. Это демонстрационный ответ чата, но данные слева извлечены вашим экстрактором.`
-            : `На основе загруженного документа (${file?.name || "документ"}), могу сообщить следующее: это демонстрационный ответ. В реальной системе здесь будет ответ RAG-пайплайна с цитатами из текста.`,
+            : pipelineMode === "demo"
+            ? `На основе загруженного документа (${file?.name || "документ"}), могу сообщить следующее: это демонстрационный ответ. В реальной системе здесь будет ответ RAG-пайплайна с цитатами из текста.`
+            : `Файл (${file?.name || "документ"}) загружен, но извлеченные данные не получены. Проверьте очередь RabbitMQ и формат ответа экстрактора.`,
         },
       ]);
     }, 1500);
@@ -446,39 +465,58 @@ export function InteractiveDemo({
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="p-12 flex flex-col items-center justify-center text-center h-full min-h-[400px]"
               >
-                <div className="relative w-24 h-24 mb-8">
-                  <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
-                  <div className="absolute inset-0 border-4 border-indigo-600 rounded-full border-t-transparent animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center text-indigo-600">
-                    <FileText className="w-8 h-8" />
-                  </div>
-                </div>
-                
-                <h3 className="text-xl font-bold text-slate-900 mb-6">
-                  ИИ Коллектив анализирует структуру...
-                </h3>
-
-                <div className="w-full max-w-md bg-slate-50 rounded-lg p-4 font-mono text-sm text-left border border-slate-100">
-                  {PROCESSING_LOGS.map((log, index) => (
-                    <div
-                      key={index}
-                      className={`flex items-center gap-2 py-1 transition-opacity duration-300 ${
-                        index === processingLogIndex
-                          ? "text-indigo-600 opacity-100"
-                          : index < processingLogIndex
-                          ? "text-slate-400 opacity-70"
-                          : "opacity-0 hidden"
-                      }`}
+                {processingError ? (
+                  <div className="w-full max-w-lg rounded-xl border border-red-200 bg-red-50 p-6 text-left">
+                    <h3 className="text-lg font-semibold text-red-900 mb-2">Реальный сценарий не запустился</h3>
+                    <p className="text-sm text-red-800 mb-4">{processingError}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProcessingError(null);
+                        setStep("upload");
+                      }}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
                     >
-                      {index < processingLogIndex ? (
-                        <CheckCircle2 className="w-4 h-4" />
-                      ) : index === processingLogIndex ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : null}
-                      {log}
+                      Вернуться к загрузке
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="relative w-24 h-24 mb-8">
+                      <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
+                      <div className="absolute inset-0 border-4 border-indigo-600 rounded-full border-t-transparent animate-spin"></div>
+                      <div className="absolute inset-0 flex items-center justify-center text-indigo-600">
+                        <FileText className="w-8 h-8" />
+                      </div>
                     </div>
-                  ))}
-                </div>
+
+                    <h3 className="text-xl font-bold text-slate-900 mb-6">
+                      ИИ Коллектив анализирует структуру...
+                    </h3>
+
+                    <div className="w-full max-w-md bg-slate-50 rounded-lg p-4 font-mono text-sm text-left border border-slate-100">
+                      {PROCESSING_LOGS.map((log, index) => (
+                        <div
+                          key={index}
+                          className={`flex items-center gap-2 py-1 transition-opacity duration-300 ${
+                            index === processingLogIndex
+                              ? "text-indigo-600 opacity-100"
+                              : index < processingLogIndex
+                              ? "text-slate-400 opacity-70"
+                              : "opacity-0 hidden"
+                          }`}
+                        >
+                          {index < processingLogIndex ? (
+                            <CheckCircle2 className="w-4 h-4" />
+                          ) : index === processingLogIndex ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : null}
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -504,10 +542,10 @@ export function InteractiveDemo({
                   <div className="p-4 overflow-y-auto flex-1">
                     <div className="space-y-3">
                       {Object.entries(
-                        extractedData?.extracted_data || 
-                        extractedData?.metadata || 
-                        (extractedData && typeof extractedData === 'object' && !extractedData.extracted_data ? extractedData : null) || 
-                        MOCK_METADATA[docType]
+                        extractedData?.extracted_data ||
+                        extractedData?.metadata ||
+                        (extractedData && typeof extractedData === "object" && !extractedData.extracted_data ? extractedData : null) ||
+                        (pipelineMode === "demo" ? MOCK_METADATA[docType] : {})
                       ).map(([key, value]) => {
                         // Skip internal fields if rendering raw extractedData
                         if (key === 'media_id' || key === 'file_url' || key === 'reply_queue' || key === 'status') return null;
@@ -530,6 +568,11 @@ export function InteractiveDemo({
                           </div>
                         </div>
                       )})}
+                      {!extractedData && pipelineMode === "real" && (
+                        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+                          Экстрактор завершил обработку, но полезные поля не были найдены в ответе.
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -538,9 +581,15 @@ export function InteractiveDemo({
                 <div className="w-full md:w-2/3 flex flex-col h-full bg-white">
                   <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="font-semibold text-slate-900">Чат с документом</h3>
-                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                      Контекст загружен
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full flex items-center gap-1 ${
+                      pipelineMode === "demo"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-emerald-100 text-emerald-700"
+                    }`}>
+                      <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                        pipelineMode === "demo" ? "bg-amber-500" : "bg-emerald-500"
+                      }`}></div>
+                      {pipelineMode === "demo" ? "Демо-контекст" : "Контекст загружен"}
                     </span>
                   </div>
 

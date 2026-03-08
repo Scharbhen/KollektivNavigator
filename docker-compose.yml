@@ -8,8 +8,15 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      # Use the real extractor pipeline; switch to true only for explicit demo mode.
+      - DEMO_MODE=false
       # URL for connecting to the local RabbitMQ container
       - RABBITMQ_URL=amqp://extractor_user:RmqPass_2026_xYz@rabbitmq:5672
+      # Queue consumed by the extractor and queue used for responses back to this app.
+      - RABBITMQ_TARGET_QUEUE=doc-2-md
+      - RABBITMQ_REPLY_QUEUE=demo-responses
+      # Timeout for RabbitMQ publish confirms in milliseconds.
+      - RABBITMQ_PUBLISH_TIMEOUT_MS=10000
       # IMPORTANT: Set this to the public URL of your VPS so the extractor can download files
       - NEXT_PUBLIC_BASE_URL=http://212.113.98.130
     volumes:
@@ -25,7 +32,9 @@ services:
     restart: always
     environment:
       - NODE_ENV=production
+      - DEMO_MODE=false
       - RABBITMQ_URL=amqp://extractor_user:RmqPass_2026_xYz@rabbitmq:5672
+      - RABBITMQ_REPLY_QUEUE=demo-responses
     volumes:
       - app_data_v2:/app/data
     depends_on:
