@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   web:
-    build: .
+    build:
+      context: .
+      target: runner-web
     restart: always
     ports:
       - "3000:3000"
@@ -25,11 +27,13 @@ services:
       - uploads_data_v2:/app/public/uploads
       - app_data_v2:/app/data
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
 
   worker:
-    build: .
-    command: node worker.js
+    build:
+      context: .
+      target: runner-worker
     restart: always
     environment:
       - NODE_ENV=production
@@ -40,7 +44,8 @@ services:
     volumes:
       - app_data_v2:/app/data
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -53,6 +58,12 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: extractor_user
       RABBITMQ_DEFAULT_PASS: RmqPass_2026_xYz
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 

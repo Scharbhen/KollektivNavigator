@@ -10,6 +10,8 @@ const DEMO_MODE = process.env.DEMO_MODE === "true";
 const TARGET_QUEUE = process.env.RABBITMQ_TARGET_QUEUE || "doc-2-md";
 const REPLY_QUEUE = process.env.RABBITMQ_REPLY_QUEUE || "demo-responses";
 const REPLY_QUEUE_DURABLE = process.env.RABBITMQ_REPLY_QUEUE_DURABLE !== "false";
+const CONNECT_RETRIES = Number(process.env.RABBITMQ_CONNECT_RETRIES || 5);
+const CONNECT_RETRY_DELAY_MS = Number(process.env.RABBITMQ_CONNECT_RETRY_DELAY_MS || 2000);
 const PUBLISH_TIMEOUT_MS = Number(process.env.RABBITMQ_PUBLISH_TIMEOUT_MS || 10000);
 
 function logInfo(event: string, payload: Record<string, unknown>) {
@@ -45,6 +47,10 @@ function writeResults(results: Record<string, any>) {
   fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function sendToRabbitMQ(
   mediaId: string,
   fileUrl: string,
@@ -55,65 +61,86 @@ async function sendToRabbitMQ(
     return { ok: false, error: "RABBITMQ_URL is not set" };
   }
 
-  let connection: amqp.ChannelModel | null = null;
+  let lastError = "Unknown RabbitMQ error";
 
-  try {
-    logInfo("rabbit_publish_started", {
-      mediaId,
-      rabbitUrl,
-      targetQueue: TARGET_QUEUE,
-      replyQueue: REPLY_QUEUE,
-      fileUrl,
-    });
-    connection = await amqp.connect(rabbitUrl);
-    const channel = await connection.createConfirmChannel();
-    await channel.assertQueue(REPLY_QUEUE, { durable: REPLY_QUEUE_DURABLE });
-    await channel.checkQueue(TARGET_QUEUE);
-    logInfo("rabbit_target_queue_checked", {
-      mediaId,
-      targetQueue: TARGET_QUEUE,
-      replyQueue: REPLY_QUEUE,
-    });
+  for (let attempt = 1; attempt <= CONNECT_RETRIES; attempt++) {
+    let connection: amqp.ChannelModel | null = null;
 
-    const message = {
-      media_id: mediaId,
-      file_url: fileUrl,
-      reply_queue: REPLY_QUEUE,
-    };
+    try {
+      logInfo("rabbit_publish_started", {
+        mediaId,
+        rabbitUrl,
+        targetQueue: TARGET_QUEUE,
+        replyQueue: REPLY_QUEUE,
+        fileUrl,
+        attempt,
+        maxAttempts: CONNECT_RETRIES,
+      });
+      connection = await amqp.connect(rabbitUrl);
+      const channel = await connection.createConfirmChannel();
+      await channel.assertQueue(REPLY_QUEUE, { durable: REPLY_QUEUE_DURABLE });
+      await channel.checkQueue(TARGET_QUEUE);
+      logInfo("rabbit_target_queue_checked", {
+        mediaId,
+        targetQueue: TARGET_QUEUE,
+        replyQueue: REPLY_QUEUE,
+        attempt,
+      });
 
-    channel.sendToQueue(TARGET_QUEUE, Buffer.from(JSON.stringify(message)), {
-      persistent: true,
-    });
-    await Promise.race([
-      channel.waitForConfirms(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("RabbitMQ confirm timeout")), PUBLISH_TIMEOUT_MS),
-      ),
-    ]);
+      const message = {
+        media_id: mediaId,
+        file_url: fileUrl,
+        reply_queue: REPLY_QUEUE,
+      };
 
-    logInfo("rabbit_publish_confirmed", {
-      mediaId,
-      targetQueue: TARGET_QUEUE,
-      replyQueue: REPLY_QUEUE,
-    });
-    await channel.close();
-    await connection.close();
-    return { ok: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logError("rabbit_publish_failed", {
-      mediaId,
-      error: message,
-      targetQueue: TARGET_QUEUE,
-      replyQueue: REPLY_QUEUE,
-    });
-    if (connection) {
-      try {
-        await connection.close();
-      } catch {}
+      channel.sendToQueue(TARGET_QUEUE, Buffer.from(JSON.stringify(message)), {
+        persistent: true,
+      });
+      await Promise.race([
+        channel.waitForConfirms(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("RabbitMQ confirm timeout")), PUBLISH_TIMEOUT_MS),
+        ),
+      ]);
+
+      logInfo("rabbit_publish_confirmed", {
+        mediaId,
+        targetQueue: TARGET_QUEUE,
+        replyQueue: REPLY_QUEUE,
+        attempt,
+      });
+      await channel.close();
+      await connection.close();
+      return { ok: true };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      logError("rabbit_publish_attempt_failed", {
+        mediaId,
+        error: lastError,
+        targetQueue: TARGET_QUEUE,
+        replyQueue: REPLY_QUEUE,
+        attempt,
+        maxAttempts: CONNECT_RETRIES,
+      });
+      if (connection) {
+        try {
+          await connection.close();
+        } catch {}
+      }
+      if (attempt < CONNECT_RETRIES) {
+        await sleep(CONNECT_RETRY_DELAY_MS);
+      }
     }
-    return { ok: false, error: message };
   }
+
+  logError("rabbit_publish_failed", {
+    mediaId,
+    error: lastError,
+    targetQueue: TARGET_QUEUE,
+    replyQueue: REPLY_QUEUE,
+    attempts: CONNECT_RETRIES,
+  });
+  return { ok: false, error: lastError };
 }
 
 export async function POST(req: Request) {

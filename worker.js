@@ -6,6 +6,7 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const RESULTS_FILE = path.join(DATA_DIR, 'results_data.json');
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
 const REPLY_QUEUE = process.env.RABBITMQ_REPLY_QUEUE || 'demo-responses';
+const REPLY_QUEUE_DURABLE = process.env.RABBITMQ_REPLY_QUEUE_DURABLE !== 'false';
 
 function logInfo(event, payload = {}) {
   console.log(JSON.stringify({ level: 'info', scope: 'rabbit-worker', event, ...payload }));
@@ -91,7 +92,7 @@ async function startWorker() {
   }
 
   const channel = await connection.createChannel();
-  await channel.assertQueue(REPLY_QUEUE, { durable: true });
+  await channel.assertQueue(REPLY_QUEUE, { durable: REPLY_QUEUE_DURABLE });
   logInfo('worker_listening', { replyQueue: REPLY_QUEUE });
 
   channel.consume(REPLY_QUEUE, (msg) => {
