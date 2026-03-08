@@ -54,7 +54,7 @@ async function sendToRabbitMQ(
     return { ok: false, error: "RABBITMQ_URL is not set" };
   }
 
-  let connection: amqp.Connection | null = null;
+  let connection: amqp.ChannelModel | null = null;
 
   try {
     logInfo("rabbit_publish_started", {
