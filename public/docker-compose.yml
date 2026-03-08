@@ -15,6 +15,7 @@ services:
       # Queue consumed by the extractor and queue used for responses back to this app.
       - RABBITMQ_TARGET_QUEUE=doc-2-md
       - RABBITMQ_REPLY_QUEUE=demo-responses
+      - RABBITMQ_REPLY_QUEUE_DURABLE=true
       # Timeout for RabbitMQ publish confirms in milliseconds.
       - RABBITMQ_PUBLISH_TIMEOUT_MS=10000
       # IMPORTANT: Set this to the public URL of your VPS so the extractor can download files
@@ -35,6 +36,7 @@ services:
       - DEMO_MODE=false
       - RABBITMQ_URL=amqp://extractor_user:RmqPass_2026_xYz@rabbitmq:5672
       - RABBITMQ_REPLY_QUEUE=demo-responses
+      - RABBITMQ_REPLY_QUEUE_DURABLE=true
     volumes:
       - app_data_v2:/app/data
     depends_on:

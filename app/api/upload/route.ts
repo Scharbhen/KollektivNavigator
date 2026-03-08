@@ -9,6 +9,7 @@ const RESULTS_FILE = path.join(DATA_DIR, "results_data.json");
 const DEMO_MODE = process.env.DEMO_MODE === "true";
 const TARGET_QUEUE = process.env.RABBITMQ_TARGET_QUEUE || "doc-2-md";
 const REPLY_QUEUE = process.env.RABBITMQ_REPLY_QUEUE || "demo-responses";
+const REPLY_QUEUE_DURABLE = process.env.RABBITMQ_REPLY_QUEUE_DURABLE !== "false";
 const PUBLISH_TIMEOUT_MS = Number(process.env.RABBITMQ_PUBLISH_TIMEOUT_MS || 10000);
 
 function logInfo(event: string, payload: Record<string, unknown>) {
@@ -66,8 +67,13 @@ async function sendToRabbitMQ(
     });
     connection = await amqp.connect(rabbitUrl);
     const channel = await connection.createConfirmChannel();
-    await channel.assertQueue(REPLY_QUEUE, { durable: true });
-    await channel.assertQueue(TARGET_QUEUE, { durable: true });
+    await channel.assertQueue(REPLY_QUEUE, { durable: REPLY_QUEUE_DURABLE });
+    await channel.checkQueue(TARGET_QUEUE);
+    logInfo("rabbit_target_queue_checked", {
+      mediaId,
+      targetQueue: TARGET_QUEUE,
+      replyQueue: REPLY_QUEUE,
+    });
 
     const message = {
       media_id: mediaId,
