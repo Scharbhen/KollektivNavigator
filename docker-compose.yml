@@ -21,7 +21,7 @@ services:
       # Timeout for RabbitMQ publish confirms in milliseconds.
       - RABBITMQ_PUBLISH_TIMEOUT_MS=10000
       # IMPORTANT: Set this to the public URL of your VPS so the extractor can download files
-      - NEXT_PUBLIC_BASE_URL=http://212.113.98.130
+      - NEXT_PUBLIC_BASE_URL=https://navigator.sapsan17.ru
     volumes:
       # Persist uploaded files and leads data
       - uploads_data_v2:/app/public/uploads
