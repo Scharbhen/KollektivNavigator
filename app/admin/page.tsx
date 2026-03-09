@@ -155,7 +155,7 @@ export default function AdminDashboard() {
                             </span>
                             {lead.metadata.savedAs && (
                               <a 
-                                href={`/uploads/${lead.metadata.savedAs}`} 
+                                href={`/api/uploads/${encodeURIComponent(lead.metadata.savedAs)}`} 
                                 target="_blank"
                                 rel="noreferrer"
                                 className="ml-2 text-indigo-600 hover:text-indigo-800 flex items-center gap-1 text-xs font-medium"

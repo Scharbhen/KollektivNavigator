@@ -173,7 +173,7 @@ export async function POST(req: Request) {
     // Construct the absolute URL for the extractor to download the file
     // If NEXT_PUBLIC_BASE_URL is set, use it. Otherwise, try to derive from request origin.
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || new URL(req.url).origin;
-    const fileUrl = `${baseUrl}/uploads/${filename}`;
+    const fileUrl = `${baseUrl}/api/uploads/${encodeURIComponent(filename)}`;
     
     const now = new Date().toISOString();
     const results = readResults();
