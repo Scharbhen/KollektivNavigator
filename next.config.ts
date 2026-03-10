@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   typescript: {
-    ignoreBuildErrors: false,
+    ignoreBuildErrors: process.env.SKIP_TYPES_ON_BUILD === "true",
   },
   // Allow access to remote image placeholder.
   images: {
