@@ -20,6 +20,8 @@ import {
 type Step = "email" | "upload" | "processing" | "result";
 type DocType = "contract" | "invoice" | "act" | "free" | null;
 type PipelineMode = "demo" | "real" | null;
+type ChatMessage = { role: "user" | "ai"; text: string };
+type StructuredEntry = { key: string; value: string };
 
 const DOC_TYPES = [
   { id: "contract", label: "Договор", icon: FileText, desc: "Извлечение сторон, сумм, сроков" },
@@ -74,6 +76,272 @@ const PROCESSING_LOGS = [
   "Готово.",
 ];
 
+const INTERNAL_KEYS = new Set([
+  "id",
+  "media_id",
+  "mediaId",
+  "job_id",
+  "jobId",
+  "file_url",
+  "fileUrl",
+  "reply_queue",
+  "replyQueue",
+  "status",
+  "pipeline",
+  "updatedAt",
+  "createdAt",
+  "error",
+  "extraction_error",
+]);
+
+const MARKDOWN_KEYS = new Set(["md", "markdown", "text", "content", "document_text", "documentText", "body"]);
+const CONTAINER_KEYS = new Set(["metadata", "extracted_data"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringifyValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : JSON.stringify(item)))
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  return JSON.stringify(value);
+}
+
+function extractMarkdownValue(source: unknown, depth = 0): string | null {
+  if (!source || depth > 3) return null;
+  if (typeof source === "string") return null;
+  if (Array.isArray(source)) {
+    for (const item of source) {
+      const nested = extractMarkdownValue(item, depth + 1);
+      if (nested) return nested;
+    }
+    return null;
+  }
+  if (!isRecord(source)) return null;
+
+  for (const [key, value] of Object.entries(source)) {
+    if (MARKDOWN_KEYS.has(key) && typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  for (const value of Object.values(source)) {
+    const nested = extractMarkdownValue(value, depth + 1);
+    if (nested) return nested;
+  }
+
+  return null;
+}
+
+function flattenEntries(source: unknown, prefix = "", depth = 0): StructuredEntry[] {
+  if (!isRecord(source) || depth > 2) return [];
+
+  const entries: StructuredEntry[] = [];
+
+  for (const [key, value] of Object.entries(source)) {
+    if (INTERNAL_KEYS.has(key) || MARKDOWN_KEYS.has(key) || CONTAINER_KEYS.has(key)) {
+      continue;
+    }
+
+    const label = prefix ? `${prefix} / ${key}` : key;
+
+    if (isRecord(value)) {
+      entries.push(...flattenEntries(value, label, depth + 1));
+      continue;
+    }
+
+    const displayValue = stringifyValue(value);
+    if (!displayValue) continue;
+    entries.push({ key: label, value: displayValue });
+  }
+
+  return entries;
+}
+
+function getStructuredEntries(data: unknown, docType: Exclude<DocType, null>, pipelineMode: PipelineMode): StructuredEntry[] {
+  const extracted = isRecord(data) ? data.extracted_data : null;
+  const metadata = isRecord(data) ? data.metadata : null;
+
+  const entries = [
+    ...flattenEntries(extracted),
+    ...flattenEntries(metadata),
+    ...flattenEntries(data),
+  ];
+
+  const deduped = entries.filter(
+    (entry, index) =>
+      entries.findIndex((candidate) => candidate.key === entry.key && candidate.value === entry.value) === index,
+  );
+
+  if (deduped.length > 0) {
+    return deduped;
+  }
+
+  if (pipelineMode === "demo") {
+    return Object.entries(MOCK_METADATA[docType]).map(([key, value]) => ({ key, value }));
+  }
+
+  return [];
+}
+
+function cleanMarkdownPreview(markdown: string): string {
+  return markdown
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|li|h\d|table|thead|tbody)>/gi, "\n")
+    .replace(/<(p|div|tr|li|h\d|table|thead|tbody)[^>]*>/gi, "\n")
+    .replace(/<\/?(td|th)[^>]*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/^={2,}\s*(.*?)\s*={2,}$/gm, "$1")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function buildMarkdownPreview(markdown: string): string {
+  const cleaned = cleanMarkdownPreview(markdown);
+  const lines = cleaned
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 14);
+
+  return lines.join("\n");
+}
+
+function extractRelevantLines(markdown: string, question: string): string[] {
+  const keywords = question
+    .toLowerCase()
+    .match(/[a-zа-яё0-9-]{3,}/gi)?.filter((word) => !["что", "это", "для", "как", "или", "его", "ее", "она", "они", "про", "под", "над", "кто"].includes(word)) || [];
+
+  if (keywords.length === 0) return [];
+
+  return cleanMarkdownPreview(markdown)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => keywords.some((keyword) => line.toLowerCase().includes(keyword)))
+    .slice(0, 3);
+}
+
+function buildSummaryAnswer(documentName: string, entries: StructuredEntry[], markdown: string | null): string {
+  const lead = markdown
+    ? cleanMarkdownPreview(markdown)
+        .split(/(?<=[.!?])\s+/)
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(" ")
+    : "";
+
+  const highlights = entries.slice(0, 4).map((entry) => `${entry.key}: ${entry.value}`);
+
+  if (lead && highlights.length > 0) {
+    return `Кратко по документу ${documentName}:\n${lead}\n\nКлючевые данные:\n- ${highlights.join("\n- ")}`;
+  }
+
+  if (lead) {
+    return `Кратко по документу ${documentName}:\n${lead}`;
+  }
+
+  if (highlights.length > 0) {
+    return `По документу ${documentName} удалось извлечь такие данные:\n- ${highlights.join("\n- ")}`;
+  }
+
+  return `По документу ${documentName} пока доступны только сырые результаты распознавания без явных метаданных.`;
+}
+
+function buildKeyPointsAnswer(entries: StructuredEntry[], markdown: string | null): string {
+  const points = entries.slice(0, 5).map((entry) => `- ${entry.key}: ${entry.value}`);
+
+  if (points.length > 0) {
+    return `Ключевые тезисы по извлечённым данным:\n${points.join("\n")}`;
+  }
+
+  if (markdown) {
+    const lines = cleanMarkdownPreview(markdown)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 5)
+      .map((line) => `- ${line}`);
+
+    return `Ключевые фрагменты текста:\n${lines.join("\n")}`;
+  }
+
+  return "Не удалось выделить ключевые тезисы: в ответе экстрактора недостаточно структурированных данных.";
+}
+
+function buildAuthorAnswer(entries: StructuredEntry[], markdown: string | null): string {
+  const authorPatterns = /(автор|подписант|исполнитель|заказчик|поставщик|подписал|составил)/i;
+  const authorEntry = entries.find((entry) => authorPatterns.test(entry.key));
+
+  if (authorEntry) {
+    return `В извлечённых данных найдено поле "${authorEntry.key}": ${authorEntry.value}`;
+  }
+
+  if (markdown) {
+    const relevant = extractRelevantLines(markdown, "автор подписант исполнитель заказчик поставщик");
+    if (relevant.length > 0) {
+      return `В тексте документа нашлись связанные фрагменты:\n- ${relevant.join("\n- ")}`;
+    }
+  }
+
+  return "Я не нашёл в извлечённых данных явного указания на автора или подписанта документа.";
+}
+
+function buildAnswerFromExtractor(question: string, documentName: string, entries: StructuredEntry[], markdown: string | null): string {
+  const normalizedQuestion = question.toLowerCase();
+
+  if (/кратк.*резюм|summary|о чем|суть/.test(normalizedQuestion)) {
+    return buildSummaryAnswer(documentName, entries, markdown);
+  }
+
+  if (/ключев|тезис|важн|основн/.test(normalizedQuestion)) {
+    return buildKeyPointsAnswer(entries, markdown);
+  }
+
+  if (/кто.*автор|кто.*подпис|автор|подписант/.test(normalizedQuestion)) {
+    return buildAuthorAnswer(entries, markdown);
+  }
+
+  const matchedEntries = entries.filter((entry) => {
+    const haystack = `${entry.key} ${entry.value}`.toLowerCase();
+    return normalizedQuestion
+      .match(/[a-zа-яё0-9-]{3,}/gi)
+      ?.some((token) => haystack.includes(token)) ?? false;
+  });
+
+  if (matchedEntries.length > 0) {
+    return `По документу ${documentName} нашёл такие релевантные поля:\n- ${matchedEntries
+      .slice(0, 4)
+      .map((entry) => `${entry.key}: ${entry.value}`)
+      .join("\n- ")}`;
+  }
+
+  if (markdown) {
+    const relevantLines = extractRelevantLines(markdown, question);
+    if (relevantLines.length > 0) {
+      return `В тексте документа нашёл подходящие фрагменты:\n- ${relevantLines.join("\n- ")}`;
+    }
+  }
+
+  const fallback = entries.slice(0, 3).map((entry) => `${entry.key}: ${entry.value}`);
+  if (fallback.length > 0) {
+    return `Прямого ответа на вопрос в извлечённых полях не нашёл. Сейчас доступны такие данные:\n- ${fallback.join("\n- ")}`;
+  }
+
+  return `Я не нашёл достаточно данных в ответе экстрактора, чтобы ответить на вопрос по документу ${documentName}.`;
+}
+
 export function InteractiveDemo({
   isOpen,
   onClose,
@@ -94,11 +362,14 @@ export function InteractiveDemo({
   const [processingError, setProcessingError] = useState<string | null>(null);
   
   const [chatInput, setChatInput] = useState("");
-  const [chatHistory, setChatHistory] = useState<{ role: "user" | "ai"; text: string }[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isAiTyping, setIsAiTyping] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const structuredEntries = docType ? getStructuredEntries(extractedData, docType, pipelineMode) : [];
+  const markdownPreview = extractedData ? extractMarkdownValue(extractedData) : null;
+  const prettyMarkdownPreview = markdownPreview ? buildMarkdownPreview(markdownPreview) : null;
 
   // Reset state when opened
   useEffect(() => {
@@ -277,21 +548,22 @@ export function InteractiveDemo({
     setChatInput("");
     setIsAiTyping(true);
 
-    // Simulate AI response
     setTimeout(() => {
+      const documentName = file?.name || "документ";
+      const answer =
+        pipelineMode === "demo" && !extractedData
+          ? `На основе загруженного документа (${documentName}) могу показать только демонстрационный сценарий. В реальном режиме здесь будет ответ по данным экстрактора.`
+          : buildAnswerFromExtractor(text, documentName, structuredEntries, markdownPreview);
+
       setIsAiTyping(false);
       setChatHistory((prev) => [
         ...prev,
         {
           role: "ai",
-          text: extractedData 
-            ? `На основе загруженного документа (${file?.name || "документ"}), я проанализировал реальные данные. Это демонстрационный ответ чата, но данные слева извлечены вашим экстрактором.`
-            : pipelineMode === "demo"
-            ? `На основе загруженного документа (${file?.name || "документ"}), могу сообщить следующее: это демонстрационный ответ. В реальной системе здесь будет ответ RAG-пайплайна с цитатами из текста.`
-            : `Файл (${file?.name || "документ"}) загружен, но извлеченные данные не получены. Проверьте очередь RabbitMQ и формат ответа экстрактора.`,
+          text: answer,
         },
       ]);
-    }, 1500);
+    }, 500);
   };
 
   if (!isOpen) return null;
@@ -541,25 +813,13 @@ export function InteractiveDemo({
                   </div>
                   <div className="p-4 overflow-y-auto flex-1">
                     <div className="space-y-3">
-                      {Object.entries(
-                        extractedData?.extracted_data ||
-                        extractedData?.metadata ||
-                        (extractedData && typeof extractedData === "object" && !extractedData.extracted_data ? extractedData : null) ||
-                        (pipelineMode === "demo" ? MOCK_METADATA[docType] : {})
-                      ).map(([key, value]) => {
-                        // Skip internal fields if rendering raw extractedData
-                        if (key === 'media_id' || key === 'file_url' || key === 'reply_queue' || key === 'status') return null;
-                        
-                        // Handle nested objects or arrays gracefully
-                        const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
-                        
-                        return (
-                        <div key={key} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm group">
+                      {structuredEntries.map(({ key, value }) => (
+                        <div key={`${key}-${value}`} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm group">
                           <div className="text-xs font-medium text-slate-500 mb-1">{key}</div>
                           <div className="text-sm text-slate-900 font-medium flex items-start justify-between gap-2">
-                            <span className="break-words">{displayValue}</span>
+                            <span className="break-words">{value}</span>
                             <button
-                              onClick={() => handleCopy(displayValue, key)}
+                              onClick={() => handleCopy(value, key)}
                               className="text-slate-400 hover:text-indigo-600 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                               title="Копировать"
                             >
@@ -567,8 +827,19 @@ export function InteractiveDemo({
                             </button>
                           </div>
                         </div>
-                      )})}
-                      {!extractedData && pipelineMode === "real" && (
+                      ))}
+                      {prettyMarkdownPreview && (
+                        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <div className="text-xs font-medium text-slate-500">Текст документа</div>
+                            <div className="text-[11px] uppercase tracking-[0.12em] text-slate-400">preview</div>
+                          </div>
+                          <div className="max-h-72 overflow-y-auto rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600 whitespace-pre-wrap">
+                            {prettyMarkdownPreview}
+                          </div>
+                        </div>
+                      )}
+                      {structuredEntries.length === 0 && !prettyMarkdownPreview && pipelineMode === "real" && (
                         <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
                           Экстрактор завершил обработку, но полезные поля не были найдены в ответе.
                         </div>
@@ -607,7 +878,7 @@ export function InteractiveDemo({
                               : "bg-slate-100 text-slate-900 rounded-tl-sm"
                           }`}
                         >
-                          {msg.text}
+                          <span className="whitespace-pre-wrap break-words">{msg.text}</span>
                         </div>
                       </div>
                     ))}
