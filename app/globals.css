@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Franklin Gothic Medium", "Arial Narrow", "Avenir Next Condensed", "Avenir Next", sans-serif;
+}
