@@ -22,6 +22,15 @@ type DocType = "contract" | "invoice" | "act" | "free" | null;
 type PipelineMode = "demo" | "real" | null;
 type ChatMessage = { role: "user" | "ai"; text: string };
 type StructuredEntry = { key: string; value: string };
+type DocumentInfo = {
+  mediaId?: string;
+  filename?: string;
+  originalFilename?: string;
+  fileSize?: number;
+  mimeType?: string;
+  fileUrl?: string;
+  selectedDocType?: string | null;
+} | null;
 
 const DOC_TYPES = [
   { id: "contract", label: "Договор", icon: FileText, desc: "Извлечение сторон, сумм, сроков" },
@@ -298,10 +307,77 @@ function buildAuthorAnswer(entries: StructuredEntry[], markdown: string | null):
   return "Я не нашёл в извлечённых данных явного указания на автора или подписанта документа.";
 }
 
-function buildAnswerFromExtractor(question: string, documentName: string, entries: StructuredEntry[], markdown: string | null): string {
+function getDocTypeLabel(docType: DocType): string | null {
+  if (docType === "contract") return "договор";
+  if (docType === "invoice") return "счёт-фактура";
+  if (docType === "act") return "акт";
+  if (docType === "free") return "документ свободного формата";
+  return null;
+}
+
+function buildDocTypeAnswer(
+  documentName: string,
+  docType: DocType,
+  entries: StructuredEntry[],
+  markdown: string | null,
+): string {
+  const explicitType = entries.find((entry) => /тип документа|вид документа|document type/i.test(entry.key));
+  const topic = entries.find((entry) => /предмет|тематика|резюме|summary|наименование/i.test(entry.key));
+  const docTypeLabel = explicitType?.value || getDocTypeLabel(docType);
+
+  if (docTypeLabel && topic) {
+    return `Это ${docTypeLabel}. По извлечённым данным: ${topic.key} — ${topic.value}.`;
+  }
+
+  if (docTypeLabel) {
+    return `Похоже, это ${docTypeLabel}.`;
+  }
+
+  if (markdown) {
+    const preview = cleanMarkdownPreview(markdown)
+      .split(/(?<=[.!?])\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .slice(0, 1)
+      .join(" ");
+
+    if (preview) {
+      return `По содержимому ${documentName} это выглядит так: ${preview}`;
+    }
+  }
+
+  if (entries.length > 0) {
+    return `Точный тип документа не выделен, но по извлечённым полям ${documentName} содержит:\n- ${entries
+      .slice(0, 3)
+      .map((entry) => `${entry.key}: ${entry.value}`)
+      .join("\n- ")}`;
+  }
+
+  return `Я не смог надёжно определить тип документа ${documentName} по ответу экстрактора.`;
+}
+
+function formatBytes(value?: number): string | null {
+  if (!value || Number.isNaN(value)) return null;
+  if (value < 1024) return `${value} Б`;
+  const kb = value / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} КБ`;
+  return `${(kb / 1024).toFixed(1)} МБ`;
+}
+
+function buildAnswerFromExtractor(
+  question: string,
+  documentName: string,
+  docType: DocType,
+  entries: StructuredEntry[],
+  markdown: string | null,
+): string {
   const normalizedQuestion = question.toLowerCase();
 
-  if (/кратк.*резюм|summary|о чем|суть/.test(normalizedQuestion)) {
+  if (/что.*за.*документ|какой.*документ|тип.*документ|что.*это.*документ/.test(normalizedQuestion)) {
+    return buildDocTypeAnswer(documentName, docType, entries, markdown);
+  }
+
+  if (/кратк.*резюм|summary|о чем|суть|что.*в.*документ/.test(normalizedQuestion)) {
     return buildSummaryAnswer(documentName, entries, markdown);
   }
 
@@ -355,6 +431,8 @@ export function InteractiveDemo({
   const [docType, setDocType] = useState<DocType>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [mediaId, setMediaId] = useState<string | null>(null);
+  const [documentInfo, setDocumentInfo] = useState<DocumentInfo>(null);
   const [processingLogIndex, setProcessingLogIndex] = useState(0);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [extractedData, setExtractedData] = useState<any>(null);
@@ -379,6 +457,8 @@ export function InteractiveDemo({
       setEmailError("");
       setDocType(null);
       setFile(null);
+      setMediaId(null);
+      setDocumentInfo(null);
       setProcessingLogIndex(0);
       setExtractedData(null);
       setPipelineMode(null);
@@ -436,6 +516,9 @@ export function InteractiveDemo({
       const formData = new FormData();
       formData.append("file", selectedFile);
       formData.append("email", email);
+      if (docType) {
+        formData.append("docType", docType);
+      }
 
       const response = await fetch("/api/upload", {
         method: "POST",
@@ -450,6 +533,8 @@ export function InteractiveDemo({
 
       const nextMode: PipelineMode = result.pipelineMode === "demo" ? "demo" : "real";
       setPipelineMode(nextMode);
+      setMediaId(result.mediaId || null);
+      setDocumentInfo(result.document || null);
 
       if (nextMode === "demo") {
         simulateProcessing();
@@ -482,11 +567,17 @@ export function InteractiveDemo({
         }
 
         if (data.status === "queued" || data.status === "processing") {
+          if (data.document) {
+            setDocumentInfo(data.document);
+          }
           // Update logs based on attempts to show progress
           setProcessingLogIndex(Math.min(PROCESSING_LOGS.length - 2, Math.floor(attempts / 2)));
         } else if (data.status === "completed") {
           clearInterval(interval);
           setProcessingLogIndex(PROCESSING_LOGS.length - 1);
+          if (data.document) {
+            setDocumentInfo(data.document);
+          }
           
           if (data.result) {
             setExtractedData(data.result);
@@ -497,13 +588,15 @@ export function InteractiveDemo({
             setChatHistory([
               {
                 role: "ai",
-                text: "Документ успешно проанализирован. Вы можете задать мне вопросы по его содержимому.",
+                text: "Документ обработан. Карточка документа собрана. Теперь можно задавать вопросы по содержимому.",
               },
             ]);
-            // Here we could also set the actual extracted metadata from data.result
           }, 1000);
         } else if (data.status === "failed" || data.status === "error" || data.status === "publish_failed") {
           clearInterval(interval);
+          if (data.document) {
+            setDocumentInfo(data.document);
+          }
           setProcessingError(data.error || "Экстрактор вернул ошибку обработки");
         } else if (attempts >= maxAttempts) {
           clearInterval(interval);
@@ -527,7 +620,7 @@ export function InteractiveDemo({
           setChatHistory([
             {
               role: "ai",
-              text: "Документ успешно проанализирован. Вы можете задать мне вопросы по его содержимому.",
+              text: "Документ обработан. Карточка документа собрана. Теперь можно задавать вопросы по содержимому.",
             },
           ]);
         }, 1000);
@@ -541,21 +634,35 @@ export function InteractiveDemo({
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const handleSendMessage = (text: string) => {
-    if (!text.trim()) return;
-    
-    setChatHistory((prev) => [...prev, { role: "user", text }]);
+  const handleSendMessage = async (text: string) => {
+    const question = text.trim();
+    if (!question) return;
+
+    setChatHistory((prev) => [...prev, { role: "user", text: question }]);
     setChatInput("");
     setIsAiTyping(true);
 
-    setTimeout(() => {
-      const documentName = file?.name || "документ";
+    try {
+      const documentName = documentInfo?.originalFilename || file?.name || "документ";
       const answer =
         pipelineMode === "demo" && !extractedData
-          ? `На основе загруженного документа (${documentName}) могу показать только демонстрационный сценарий. В реальном режиме здесь будет ответ по данным экстрактора.`
-          : buildAnswerFromExtractor(text, documentName, structuredEntries, markdownPreview);
+          ? `На основе загруженного документа (${documentName}) могу показать только демонстрационный сценарий. В реальном режиме здесь будет ответ экстрактора.`
+          : await (async () => {
+              if (!mediaId) {
+                throw new Error("Не найден идентификатор документа для запроса в экстрактор");
+              }
+              const response = await fetch("/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mediaId, question }),
+              });
+              const payload = await response.json();
+              if (!response.ok || !payload.success) {
+                throw new Error(payload.error || "Не удалось получить ответ от экстрактора");
+              }
+              return payload.answer as string;
+            })();
 
-      setIsAiTyping(false);
       setChatHistory((prev) => [
         ...prev,
         {
@@ -563,10 +670,35 @@ export function InteractiveDemo({
           text: answer,
         },
       ]);
-    }, 500);
+    } catch (error) {
+      setChatHistory((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text:
+            error instanceof Error
+              ? `Не удалось получить ответ по документу: ${error.message}`
+              : "Не удалось получить ответ по документу",
+        },
+      ]);
+    } finally {
+      setIsAiTyping(false);
+    }
   };
 
   if (!isOpen) return null;
+
+  const documentName = documentInfo?.originalFilename || file?.name || "document.pdf";
+  const detectedDocType =
+    extractedData && typeof extractedData === "object" && "documentType" in extractedData && typeof extractedData.documentType === "string"
+      ? extractedData.documentType
+      : null;
+  const documentCardFacts = [
+    { label: "Статус", value: pipelineMode === "demo" ? "Демо-сценарий" : "Готов к вопросам" },
+    { label: "Тип", value: detectedDocType || getDocTypeLabel(docType) || "Не определён" },
+    { label: "Размер", value: formatBytes(documentInfo?.fileSize ?? file?.size) || "Неизвестно" },
+    { label: "Извлечено полей", value: String(structuredEntries.length) },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 sm:p-6">
@@ -807,12 +939,23 @@ export function InteractiveDemo({
                       <FileText className="w-4 h-4 text-indigo-600" />
                       Карточка документа
                     </h3>
-                    <p className="text-xs text-slate-500 mt-1 truncate" title={file?.name}>
-                      {file?.name || "document.pdf"}
+                    <p className="text-xs text-slate-500 mt-1 truncate" title={documentName}>
+                      {documentName}
                     </p>
                   </div>
                   <div className="p-4 overflow-y-auto flex-1">
                     <div className="space-y-3">
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-3 text-sm font-semibold text-slate-900">Сводка</div>
+                        <div className="grid grid-cols-1 gap-3">
+                          {documentCardFacts.map((fact) => (
+                            <div key={fact.label} className="rounded-lg bg-slate-50 px-3 py-2">
+                              <div className="text-[11px] uppercase tracking-[0.12em] text-slate-400">{fact.label}</div>
+                              <div className="mt-1 text-sm font-medium text-slate-900 break-words">{fact.value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                       {structuredEntries.map(({ key, value }) => (
                         <div key={`${key}-${value}`} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm group">
                           <div className="text-xs font-medium text-slate-500 mb-1">{key}</div>

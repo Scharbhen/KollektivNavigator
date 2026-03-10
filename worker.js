@@ -112,12 +112,14 @@ async function startWorker() {
         if (mediaId) {
           const now = new Date().toISOString();
           const results = readResults();
+          const previous = results[mediaId] || {};
           results[mediaId] = {
+            ...previous,
             status,
             pipeline: 'real',
             result: content,
             updatedAt: now,
-            createdAt: results[mediaId]?.createdAt || now,
+            createdAt: previous.createdAt || now,
           };
           writeResults(results);
           logInfo('worker_result_persisted', { mediaId, status, replyQueue: REPLY_QUEUE });

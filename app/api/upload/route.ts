@@ -174,12 +174,23 @@ export async function POST(req: Request) {
     // If NEXT_PUBLIC_BASE_URL is set, use it. Otherwise, try to derive from request origin.
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || new URL(req.url).origin;
     const fileUrl = `${baseUrl}/api/uploads/${encodeURIComponent(filename)}`;
+    const documentInfo = {
+      mediaId,
+      filename,
+      originalFilename: file.name,
+      fileSize: file.size,
+      mimeType: file.type || "application/octet-stream",
+      fileUrl,
+      selectedDocType: formData.get("docType") as string | null,
+    };
     
     const now = new Date().toISOString();
     const results = readResults();
     results[mediaId] = {
+      ...(results[mediaId] || {}),
       status: DEMO_MODE ? "processing" : "queued",
       pipeline: DEMO_MODE ? "demo" : "real",
+      document: documentInfo,
       updatedAt: now,
       createdAt: now,
     };
@@ -207,8 +218,10 @@ export async function POST(req: Request) {
       if (!publishResult.ok) {
         const failedResults = readResults();
         failedResults[mediaId] = {
+          ...(failedResults[mediaId] || {}),
           status: "publish_failed",
           pipeline: "real",
+          document: failedResults[mediaId]?.document || documentInfo,
           error: rabbitError || "unknown error",
           updatedAt: new Date().toISOString(),
           createdAt: failedResults[mediaId]?.createdAt || now,
@@ -282,6 +295,7 @@ export async function POST(req: Request) {
       filename: filename,
       url: fileUrl,
       mediaId: mediaId,
+      document: documentInfo,
       rabbitMqSent: rabbitSuccess,
       pipelineMode: DEMO_MODE ? "demo" : "real",
       status: DEMO_MODE ? "processing" : "queued",
