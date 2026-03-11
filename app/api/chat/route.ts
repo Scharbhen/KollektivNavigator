@@ -4,6 +4,8 @@ import path from "path";
 import amqp from "amqplib";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 const DATA_DIR = path.join(process.cwd(), "data");
 const RESULTS_FILE = path.join(DATA_DIR, "results_data.json");
 const METADATA_QUEUE = process.env.RABBITMQ_METADATA_QUEUE || "doc-2-metadata";
@@ -15,7 +17,6 @@ const QA_PROMPT_TEMPLATE =
   process.env.QA_PROMPT_TEMPLATE ||
   'request_id="{request_id}". Вопрос пользователя: "{question}". Верни JSON с request_id и answer.';
 const QA_ANSWER_KEY = process.env.QA_ANSWER_KEY || "answer";
-const DIRECT_REPLY_TO = "amq.rabbitmq.reply-to";
 
 function logInfo(event: string, payload: Record<string, unknown>) {
   console.log(JSON.stringify({ level: "info", scope: "chat-api", event, ...payload }));
@@ -90,9 +91,9 @@ function toAnswerText(value: unknown): string | null {
   return text || null;
 }
 
-function parseExtractorResponse(raw: string, requestId: string): string {
+function parseMetadataReply(raw: string, requestId: string, mediaId: string): string | null {
   if (!raw.trim()) {
-    throw new Error("Extractor returned an empty body");
+    return null;
   }
 
   let parsed: any;
@@ -101,26 +102,33 @@ function parseExtractorResponse(raw: string, requestId: string): string {
   } catch (error) {
     logError("chat_response_parse_failed", {
       requestId,
+      mediaId,
       rawPreview: raw.slice(0, 500),
       error: error instanceof Error ? error.message : String(error),
     });
-    throw new Error("Extractor returned invalid JSON");
+    return null;
   }
 
-  const state = parsed?.result?.state;
-  const message = parsed?.result?.message;
-  const data = isRecord(parsed?.data) ? parsed.data : null;
-
-  if (state === "Error") {
-    throw new Error(typeof message === "string" && message.trim() ? message : "Extractor returned an error");
+  if (parsed?.extraction_error) {
+    throw new Error(String(parsed.extraction_error));
   }
 
-  const responseRequestId = data?.request_id || data?.requestId;
-  if (responseRequestId && String(responseRequestId) !== requestId) {
-    throw new Error("Extractor returned mismatched request_id");
+  const responseMediaId = parsed?.id ?? parsed?.media_id ?? parsed?.mediaId;
+  if (responseMediaId != null && String(responseMediaId) !== mediaId) {
+    return null;
   }
 
-  const answer = toAnswerText(data?.[QA_ANSWER_KEY]);
+  const metadata = isRecord(parsed?.metadata) ? parsed.metadata : null;
+  if (!metadata) {
+    return null;
+  }
+
+  const responseRequestId = metadata.request_id || metadata.requestId;
+  if (responseRequestId == null || String(responseRequestId) !== requestId) {
+    return null;
+  }
+
+  const answer = toAnswerText(metadata[QA_ANSWER_KEY]);
   if (!answer) {
     throw new Error("Extractor returned empty answer");
   }
@@ -151,48 +159,51 @@ async function askExtractorQuestion(mediaId: string, markdown: string, question:
     connection = await amqp.connect(rabbitUrl);
     channel = await connection.createChannel();
     await channel.checkQueue(METADATA_QUEUE);
+    const replyQueue = (await channel.assertQueue("", { exclusive: true, autoDelete: true, durable: false })).queue;
 
     logInfo("chat_request_started", {
       mediaId,
       metadataQueue: METADATA_QUEUE,
+      replyQueue,
       requestId,
-      mode: "direct-reply-to",
     });
 
-    const responsePromise = new Promise<string>((resolve, reject) => {
+    const answer = await new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error("Extractor did not answer in time"));
       }, CHAT_TIMEOUT_MS);
 
       channel!
         .consume(
-          DIRECT_REPLY_TO,
+          replyQueue,
           (msg) => {
-            if (!msg) return;
-            if (msg.properties.correlationId !== requestId) {
+            if (!msg) {
               return;
             }
 
-            clearTimeout(timeout);
-            const body = msg.content.toString("utf-8");
-            logInfo("chat_response_received", {
-              mediaId,
-              requestId,
-              bodyLength: body.length,
-              contentType: msg.properties.contentType || null,
-              correlationId: msg.properties.correlationId || null,
-            });
-            resolve(body);
+            try {
+              const raw = msg.content.toString("utf-8");
+              const parsedAnswer = parseMetadataReply(raw, requestId, mediaId);
+              if (!parsedAnswer) {
+                return;
+              }
+
+              clearTimeout(timeout);
+              resolve(parsedAnswer);
+            } catch (error) {
+              clearTimeout(timeout);
+              reject(error);
+            }
           },
           { noAck: true },
         )
         .then((consumeOk) => {
           consumerTag = consumeOk.consumerTag;
-          channel!.sendToQueue(METADATA_QUEUE, Buffer.from(JSON.stringify(payload)), {
-            contentType: "application/json",
-            correlationId: requestId,
-            replyTo: DIRECT_REPLY_TO,
-          });
+          channel!.sendToQueue(
+            METADATA_QUEUE,
+            Buffer.from(JSON.stringify({ ...payload, reply_queue: replyQueue })),
+            { contentType: "application/json" },
+          );
         })
         .catch((error) => {
           clearTimeout(timeout);
@@ -200,9 +211,13 @@ async function askExtractorQuestion(mediaId: string, markdown: string, question:
         });
     });
 
-    const raw = await responsePromise;
-    const answer = parseExtractorResponse(raw, requestId);
-    logInfo("chat_request_completed", { mediaId, metadataQueue: METADATA_QUEUE, requestId });
+    logInfo("chat_request_completed", {
+      mediaId,
+      metadataQueue: METADATA_QUEUE,
+      requestId,
+      answerLength: answer.length,
+    });
+
     return { requestId, answer };
   } catch (error) {
     logError("chat_request_failed", {

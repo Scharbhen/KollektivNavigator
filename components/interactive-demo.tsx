@@ -646,20 +646,30 @@ export function InteractiveDemo({
       const documentName = documentInfo?.originalFilename || file?.name || "документ";
       const answer =
         pipelineMode === "demo" && !extractedData
-          ? `На основе загруженного документа (${documentName}) могу показать только демонстрационный сценарий. В реальном режиме здесь будет ответ экстрактора.`
+          ? `На основе загруженного документа (${documentName}) могу показать только демонстрационный сценарий. В реальном режиме здесь будет ответ экстрактора по распознанному тексту.`
           : await (async () => {
               if (!mediaId) {
-                throw new Error("Не найден идентификатор документа для запроса в экстрактор");
+                throw new Error("Не найден идентификатор документа для запроса к экстрактору");
               }
+
               const response = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ mediaId, question }),
               });
-              const payload = await response.json();
-              if (!response.ok || !payload.success) {
-                throw new Error(payload.error || "Не удалось получить ответ от экстрактора");
+
+              const raw = await response.text();
+              let payload: any = null;
+              try {
+                payload = raw ? JSON.parse(raw) : null;
+              } catch {
+                throw new Error(`Сервер вернул не-JSON ответ (${response.status})`);
               }
+
+              if (!response.ok || !payload?.success || typeof payload.answer !== "string" || !payload.answer.trim()) {
+                throw new Error(payload?.error || `Не удалось получить ответ экстрактора (${response.status})`);
+              }
+
               return payload.answer as string;
             })();
 
