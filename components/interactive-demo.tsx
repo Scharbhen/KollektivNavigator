@@ -9,8 +9,6 @@ import {
   CheckCircle2,
   Loader2,
   Send,
-  Copy,
-  Check,
   ChevronRight,
   FileDigit,
   FileSpreadsheet,
@@ -22,6 +20,7 @@ type DocType = "contract" | "invoice" | "act" | "free" | null;
 type PipelineMode = "demo" | "real" | null;
 type ChatMessage = { role: "user" | "ai"; text: string };
 type StructuredEntry = { key: string; value: string };
+type DocumentFact = { label: string; value: string };
 type DocumentInfo = {
   mediaId?: string;
   filename?: string;
@@ -39,6 +38,8 @@ const DOC_TYPES = [
   { id: "free", label: "Свободный формат", icon: FileQuestion, desc: "Краткое резюме (Summary)" },
 ] as const;
 
+const DEMO_DOCUMENT_TYPES = DOC_TYPES.map((type) => type.label);
+
 const QUICK_PROMPTS = {
   contract: ["Какие здесь штрафные санкции?", "Как расторгнуть этот договор?", "Каковы сроки оплаты?"],
   invoice: ["Совпадают ли суммы с НДС и без?", "Кто плательщик?", "Укажи реквизиты банка"],
@@ -48,29 +49,44 @@ const QUICK_PROMPTS = {
 
 const MOCK_METADATA = {
   contract: {
-    "Сторона 1 (Заказчик)": "ООО «Альфа»",
-    "Сторона 2 (Исполнитель)": "ИП Иванов И.И.",
+    "Номер договора": "12/24",
+    "Дата договора": "15.01.2026",
+    "Заказчик": "ООО «Альфа»",
+    "Исполнитель": "ИП Иванов И.И.",
     "Предмет договора": "Оказание консультационных услуг",
-    "Сумма": "1 500 000 руб.",
-    "Сроки": "до 31.12.2026",
+    "Сумма договора": "1 500 000 руб.",
+    "Срок действия": "до 31.12.2026",
+    "Условия оплаты": "Постоплата 30 дней",
+    "Штрафные санкции": "0,1% за каждый день просрочки",
     "Подсудность": "Арбитражный суд г. Москвы",
   },
   invoice: {
-    "ИНН Продавца": "7701234567",
-    "КПП Продавца": "770101001",
+    "Номер счета-фактуры": "458",
+    "Дата счета-фактуры": "20.02.2026",
+    "Продавец": "ООО «ТехРешения»",
+    "Покупатель": "ПАО «МегаКорп»",
+    "ИНН продавца": "7701234567",
+    "КПП продавца": "770101001",
     "Сумма без НДС": "1 000 000 руб.",
     "Сумма НДС (20%)": "200 000 руб.",
     "Итого с НДС": "1 200 000 руб.",
+    "Основание": "Договор №12/24 от 15.01.2026",
   },
   act: {
+    "Номер акта": "17",
+    "Дата акта": "28.02.2026",
     "Исполнитель": "ООО «ТехРешения»",
     "Заказчик": "ПАО «МегаКорп»",
-    "Сумма": "500 000 руб.",
+    "Основание": "Договор №12/24 от 15.01.2026",
+    "Период услуг": "Февраль 2026",
+    "Общая сумма": "500 000 руб.",
     "Статус подписания": "Подписано обеими сторонами",
+    "Замечания": "Отсутствуют",
   },
   free: {
     "Тип документа": "Внутренний регламент",
     "Тематика": "Информационная безопасность",
+    "Автор": "Отдел ИБ",
     "Резюме": "Документ описывает правила доступа к корпоративным серверам и политику паролей.",
   },
 };
@@ -201,6 +217,258 @@ function getStructuredEntries(data: unknown, docType: Exclude<DocType, null>, pi
   return [];
 }
 
+function normalizeDocTypeValue(value: string | null | undefined): Exclude<DocType, null> | null {
+  if (!value) return null;
+
+  const normalized = value
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (
+    normalized.includes("contract") ||
+    normalized.includes("договор") ||
+    normalized.includes("agreement")
+  ) {
+    return "contract";
+  }
+
+  if (
+    normalized.includes("invoice") ||
+    normalized.includes("счет-фактур") ||
+    normalized.includes("счёт-фактур")
+  ) {
+    return "invoice";
+  }
+
+  if (normalized === "act" || normalized.includes("акт")) {
+    return "act";
+  }
+
+  if (normalized.includes("free") || normalized.includes("свобод")) {
+    return "free";
+  }
+
+  return null;
+}
+
+function extractDetectedDocType(source: unknown): Exclude<DocType, null> | null {
+  if (!source) return null;
+
+  if (typeof source === "string") {
+    return normalizeDocTypeValue(source);
+  }
+
+  if (Array.isArray(source)) {
+    for (const item of source) {
+      const detected = extractDetectedDocType(item);
+      if (detected) return detected;
+    }
+    return null;
+  }
+
+  if (!isRecord(source)) {
+    return null;
+  }
+
+  for (const [key, value] of Object.entries(source)) {
+    if (/(document.?type|doc.?type|тип документа|вид документа)/i.test(key) && typeof value === "string") {
+      const detected = normalizeDocTypeValue(value);
+      if (detected) return detected;
+    }
+  }
+
+  for (const value of Object.values(source)) {
+    const detected = extractDetectedDocType(value);
+    if (detected) return detected;
+  }
+
+  return null;
+}
+
+function findEntryValue(
+  entries: StructuredEntry[],
+  include: RegExp[],
+  exclude: RegExp[] = [],
+): string | null {
+  for (const entry of entries) {
+    const key = entry.key.toLowerCase();
+    if (include.some((pattern) => pattern.test(key)) && !exclude.some((pattern) => pattern.test(key))) {
+      return entry.value;
+    }
+  }
+
+  return null;
+}
+
+function shortenPartyName(value: string | null, maxLength = 28): string | null {
+  if (!value) return null;
+
+  const compact = value
+    .replace(/Общество с ограниченной ответственностью/gi, "ООО")
+    .replace(/Публичное акционерное общество/gi, "ПАО")
+    .replace(/Акционерное общество/gi, "АО")
+    .replace(/Индивидуальный предприниматель/gi, "ИП")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+
+  return `${compact.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function formatReference(number: string | null, date: string | null): string | null {
+  if (number && date) return `№${number.replace(/^№\s*/i, "")} от ${date}`;
+  if (number) return `№${number.replace(/^№\s*/i, "")}`;
+  return date;
+}
+
+function buildDocumentSummaryFacts(
+  docType: Exclude<DocType, null>,
+  entries: StructuredEntry[],
+  documentName: string,
+): DocumentFact[] {
+  const contractNumber = findEntryValue(entries, [/номер.*договор/i, /^номер$/i, /^№$/i]);
+  const contractDate = findEntryValue(entries, [/дата.*договор/i, /^дата$/i]);
+  const contractCustomer = shortenPartyName(findEntryValue(entries, [/заказчик/i]));
+  const contractExecutor = shortenPartyName(findEntryValue(entries, [/исполнител/i]));
+  const contractAmount = findEntryValue(
+    entries,
+    [/сумма договора/i, /цена договора/i, /общая сумма/i, /сумма/i],
+    [/без ндс/i, /ндс/i],
+  );
+
+  const invoiceNumber = findEntryValue(entries, [/номер.*сч/i, /^номер$/i, /^№$/i]);
+  const invoiceDate = findEntryValue(entries, [/дата.*сч/i, /^дата$/i]);
+  const invoiceSeller = shortenPartyName(findEntryValue(entries, [/продавец/i, /поставщик/i]));
+  const invoiceBuyer = shortenPartyName(findEntryValue(entries, [/покупател/i, /заказчик/i]));
+  const invoiceTotal = findEntryValue(entries, [/итого.*ндс/i, /сумма с ндс/i, /стоимость с ндс/i, /всего к оплате/i, /итого/i]);
+
+  const actNumber = findEntryValue(entries, [/номер.*акт/i, /^номер$/i, /^№$/i]);
+  const actDate = findEntryValue(entries, [/дата.*акт/i, /^дата$/i]);
+  const actExecutor = shortenPartyName(findEntryValue(entries, [/исполнител/i]));
+  const actCustomer = shortenPartyName(findEntryValue(entries, [/заказчик/i]));
+  const actTotal = findEntryValue(entries, [/общая сумма/i, /сумма акта/i, /итого/i, /сумма/i], [/без ндс/i, /ндс/i]);
+
+  if (docType === "contract") {
+    return [
+      { label: "Реквизиты", value: formatReference(contractNumber, contractDate) || documentName },
+      { label: "Заказчик", value: contractCustomer || "Не найден" },
+      { label: "Исполнитель", value: contractExecutor || "Не найден" },
+      { label: "Сумма", value: contractAmount || "Не найдена" },
+    ];
+  }
+
+  if (docType === "invoice") {
+    return [
+      { label: "Реквизиты", value: formatReference(invoiceNumber, invoiceDate) || documentName },
+      { label: "Продавец", value: invoiceSeller || "Не найден" },
+      { label: "Покупатель", value: invoiceBuyer || "Не найден" },
+      { label: "Итого", value: invoiceTotal || "Не найдено" },
+    ];
+  }
+
+  if (docType === "act") {
+    return [
+      { label: "Реквизиты", value: formatReference(actNumber, actDate) || documentName },
+      { label: "Исполнитель", value: actExecutor || "Не найден" },
+      { label: "Заказчик", value: actCustomer || "Не найден" },
+      { label: "Сумма", value: actTotal || "Не найдена" },
+    ];
+  }
+
+  return entries.slice(0, 4).map((entry) => ({
+    label: entry.key,
+    value: entry.value,
+  }));
+}
+
+function buildFullCardFacts(
+  docType: Exclude<DocType, null>,
+  entries: StructuredEntry[],
+  documentName: string,
+): DocumentFact[] {
+  if (docType === "contract") {
+    return [
+      { label: "Номер договора", value: findEntryValue(entries, [/номер.*договор/i, /^номер$/i, /^№$/i]) || "Не найден" },
+      { label: "Дата договора", value: findEntryValue(entries, [/дата.*договор/i, /^дата$/i]) || "Не найдена" },
+      { label: "Заказчик", value: findEntryValue(entries, [/заказчик/i]) || "Не найден" },
+      { label: "Исполнитель", value: findEntryValue(entries, [/исполнител/i]) || "Не найден" },
+      { label: "Предмет", value: findEntryValue(entries, [/предмет/i, /наименование/i, /описани/i]) || "Не найден" },
+      { label: "Сумма", value: findEntryValue(entries, [/сумма договора/i, /цена договора/i, /общая сумма/i, /сумма/i], [/без ндс/i, /ндс/i]) || "Не найдена" },
+      { label: "Срок действия", value: findEntryValue(entries, [/срок действия/i, /срок/i, /действует до/i]) || "Не найден" },
+      { label: "Условия оплаты", value: findEntryValue(entries, [/условия оплаты/i, /срок оплаты/i, /оплата/i]) || "Не найдены" },
+    ];
+  }
+
+  if (docType === "invoice") {
+    return [
+      { label: "Номер счета-фактуры", value: findEntryValue(entries, [/номер.*сч/i, /^номер$/i, /^№$/i]) || "Не найден" },
+      { label: "Дата счета-фактуры", value: findEntryValue(entries, [/дата.*сч/i, /^дата$/i]) || "Не найдена" },
+      { label: "Продавец", value: findEntryValue(entries, [/продавец/i, /поставщик/i]) || "Не найден" },
+      { label: "Покупатель", value: findEntryValue(entries, [/покупател/i, /заказчик/i]) || "Не найден" },
+      { label: "ИНН продавца", value: findEntryValue(entries, [/инн.*продав/i, /инн.*постав/i, /^инн$/i]) || "Не найден" },
+      { label: "КПП продавца", value: findEntryValue(entries, [/кпп.*продав/i, /кпп.*постав/i, /^кпп$/i]) || "Не найден" },
+      { label: "Сумма без НДС", value: findEntryValue(entries, [/без ндс/i]) || "Не найдена" },
+      { label: "НДС", value: findEntryValue(entries, [/ндс/i], [/без ндс/i, /сумма с ндс/i, /итого/i]) || "Не найден" },
+      { label: "Итого с НДС", value: findEntryValue(entries, [/итого.*ндс/i, /сумма с ндс/i, /стоимость с ндс/i, /всего к оплате/i, /итого/i]) || "Не найдено" },
+      { label: "Основание", value: findEntryValue(entries, [/основание/i, /договор/i]) || "Не найдено" },
+    ];
+  }
+
+  if (docType === "act") {
+    return [
+      { label: "Номер акта", value: findEntryValue(entries, [/номер.*акт/i, /^номер$/i, /^№$/i]) || "Не найден" },
+      { label: "Дата акта", value: findEntryValue(entries, [/дата.*акт/i, /^дата$/i]) || "Не найдена" },
+      { label: "Исполнитель", value: findEntryValue(entries, [/исполнител/i]) || "Не найден" },
+      { label: "Заказчик", value: findEntryValue(entries, [/заказчик/i]) || "Не найден" },
+      { label: "Основание", value: findEntryValue(entries, [/основание/i, /договор/i]) || "Не найдено" },
+      { label: "Период услуг", value: findEntryValue(entries, [/период/i]) || "Не найден" },
+      { label: "Общая сумма", value: findEntryValue(entries, [/общая сумма/i, /сумма акта/i, /итого/i, /сумма/i], [/без ндс/i, /ндс/i]) || "Не найдена" },
+      { label: "Статус подписания", value: findEntryValue(entries, [/статус подписания/i, /подписан/i]) || "Не найден" },
+      { label: "Замечания", value: findEntryValue(entries, [/замечани/i]) || "Не найдены" },
+    ];
+  }
+
+  return [
+    { label: "Документ", value: documentName },
+    ...entries.slice(0, 6).map((entry) => ({ label: entry.key, value: entry.value })),
+  ];
+}
+
+function buildInitialAssistantMessage({
+  documentName,
+  docType,
+  selectedDocType,
+  entries,
+}: {
+  documentName: string;
+  docType: Exclude<DocType, null>;
+  selectedDocType?: string | null;
+  entries: StructuredEntry[];
+}): string {
+  const selectedType = normalizeDocTypeValue(selectedDocType);
+  const autoSwitched = Boolean(selectedType && selectedType !== docType);
+  const fullCardFacts = buildFullCardFacts(docType, entries, documentName).filter(
+    (fact) => fact.value && !/^Не найден/i.test(fact.value),
+  );
+  const intro = autoSwitched
+    ? `Тип документа определен автоматически: ${getDocTypeLabel(docType)}. Переключил карточку на нужный тип.`
+    : `Документ обработан. Это ${getDocTypeLabel(docType)}.`;
+
+  if (fullCardFacts.length === 0) {
+    return `${intro}\n\nПолную карточку пока собрать не удалось: экстрактор не вернул уверенные реквизиты.`;
+  }
+
+  return `${intro}\n\nВот реквизиты по документу ${documentName}:\n- ${fullCardFacts
+    .slice(0, 10)
+    .map((fact) => `${fact.label}: ${fact.value}`)
+    .join("\n- ")}`;
+}
+
 function cleanMarkdownPreview(markdown: string): string {
   return markdown
     .replace(/<\s*br\s*\/?>/gi, "\n")
@@ -213,17 +481,6 @@ function cleanMarkdownPreview(markdown: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
-}
-
-function buildMarkdownPreview(markdown: string): string {
-  const cleaned = cleanMarkdownPreview(markdown);
-  const lines = cleaned
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 14);
-
-  return lines.join("\n");
 }
 
 function extractRelevantLines(markdown: string, question: string): string[] {
@@ -356,14 +613,6 @@ function buildDocTypeAnswer(
   return `Я не смог надёжно определить тип документа ${documentName} по ответу экстрактора.`;
 }
 
-function formatBytes(value?: number): string | null {
-  if (!value || Number.isNaN(value)) return null;
-  if (value < 1024) return `${value} Б`;
-  const kb = value / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} КБ`;
-  return `${(kb / 1024).toFixed(1)} МБ`;
-}
-
 function buildAnswerFromExtractor(
   question: string,
   documentName: string,
@@ -434,7 +683,6 @@ export function InteractiveDemo({
   const [mediaId, setMediaId] = useState<string | null>(null);
   const [documentInfo, setDocumentInfo] = useState<DocumentInfo>(null);
   const [processingLogIndex, setProcessingLogIndex] = useState(0);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [extractedData, setExtractedData] = useState<any>(null);
   const [pipelineMode, setPipelineMode] = useState<PipelineMode>(null);
   const [processingError, setProcessingError] = useState<string | null>(null);
@@ -447,7 +695,6 @@ export function InteractiveDemo({
   const chatEndRef = useRef<HTMLDivElement>(null);
   const structuredEntries = docType ? getStructuredEntries(extractedData, docType, pipelineMode) : [];
   const markdownPreview = extractedData ? extractMarkdownValue(extractedData) : null;
-  const prettyMarkdownPreview = markdownPreview ? buildMarkdownPreview(markdownPreview) : null;
 
   // Reset state when opened
   useEffect(() => {
@@ -472,6 +719,64 @@ export function InteractiveDemo({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, isAiTyping]);
+
+  const finalizeProcessing = ({
+    nextExtractedData,
+    nextDocumentInfo,
+    nextPipelineMode,
+  }: {
+    nextExtractedData: unknown;
+    nextDocumentInfo: DocumentInfo;
+    nextPipelineMode: PipelineMode;
+  }) => {
+    const resolvedDocType =
+      extractDetectedDocType(nextExtractedData) ||
+      normalizeDocTypeValue(nextDocumentInfo?.selectedDocType) ||
+      docType ||
+      "free";
+
+    if (resolvedDocType !== docType) {
+      setDocType(resolvedDocType);
+    }
+
+    const entries = getStructuredEntries(nextExtractedData, resolvedDocType, nextPipelineMode);
+    const nextDocumentName = nextDocumentInfo?.originalFilename || file?.name || "документ";
+    const initialMessage = buildInitialAssistantMessage({
+      documentName: nextDocumentName,
+      docType: resolvedDocType,
+      selectedDocType: nextDocumentInfo?.selectedDocType,
+      entries,
+    });
+
+    setTimeout(() => {
+      setStep("result");
+      setChatHistory([
+        {
+          role: "ai",
+          text: initialMessage,
+        },
+      ]);
+    }, 1000);
+  };
+
+  const classifyDocumentType = async (nextMediaId: string, filename?: string): Promise<string | null> => {
+    const response = await fetch("/api/classify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mediaId: nextMediaId,
+        filename,
+        documentTypes: DEMO_DOCUMENT_TYPES,
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok || !payload?.success || typeof payload.documentType !== "string") {
+      throw new Error(payload?.error || `Не удалось классифицировать документ (${response.status})`);
+    }
+
+    return payload.documentType;
+  };
 
   const handleEmailSubmit = async (e?: React.FormEvent | React.MouseEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
@@ -537,7 +842,7 @@ export function InteractiveDemo({
       setDocumentInfo(result.document || null);
 
       if (nextMode === "demo") {
-        simulateProcessing();
+        simulateProcessing(result.document || null);
         return;
       }
 
@@ -575,23 +880,33 @@ export function InteractiveDemo({
         } else if (data.status === "completed") {
           clearInterval(interval);
           setProcessingLogIndex(PROCESSING_LOGS.length - 1);
-          if (data.document) {
-            setDocumentInfo(data.document);
+          const nextDocumentInfo = data.document || documentInfo;
+          let nextExtractedData = data.result || null;
+          if (nextDocumentInfo) {
+            setDocumentInfo(nextDocumentInfo);
           }
-          
-          if (data.result) {
-            setExtractedData(data.result);
+
+          try {
+            const classifiedType = await classifyDocumentType(
+              mediaId,
+              nextDocumentInfo?.originalFilename || file?.name,
+            );
+            if (classifiedType && isRecord(nextExtractedData)) {
+              nextExtractedData = {
+                ...nextExtractedData,
+                documentType: classifiedType,
+              };
+            }
+          } catch (error) {
+            console.error("Classification error:", error);
           }
-          
-          setTimeout(() => {
-            setStep("result");
-            setChatHistory([
-              {
-                role: "ai",
-                text: "Документ обработан. Карточка документа собрана. Теперь можно задавать вопросы по содержимому.",
-              },
-            ]);
-          }, 1000);
+
+          setExtractedData(nextExtractedData);
+          finalizeProcessing({
+            nextExtractedData,
+            nextDocumentInfo,
+            nextPipelineMode: "real",
+          });
         } else if (data.status === "failed" || data.status === "error" || data.status === "publish_failed") {
           clearInterval(interval);
           if (data.document) {
@@ -608,30 +923,20 @@ export function InteractiveDemo({
     }, 5000);
   };
 
-  const simulateProcessing = () => {
+  const simulateProcessing = (nextDocumentInfo: DocumentInfo) => {
     let currentLog = 0;
     const interval = setInterval(() => {
       currentLog++;
       setProcessingLogIndex(currentLog);
       if (currentLog >= PROCESSING_LOGS.length - 1) {
         clearInterval(interval);
-        setTimeout(() => {
-          setStep("result");
-          setChatHistory([
-            {
-              role: "ai",
-              text: "Документ обработан. Карточка документа собрана. Теперь можно задавать вопросы по содержимому.",
-            },
-          ]);
-        }, 1000);
+        finalizeProcessing({
+          nextExtractedData: null,
+          nextDocumentInfo,
+          nextPipelineMode: "demo",
+        });
       }
     }, 800);
-  };
-
-  const handleCopy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
   };
 
   const handleSendMessage = async (text: string) => {
@@ -644,9 +949,10 @@ export function InteractiveDemo({
 
     try {
       const documentName = documentInfo?.originalFilename || file?.name || "документ";
+      const activeDocType = docType || normalizeDocTypeValue(documentInfo?.selectedDocType) || "free";
       const answer =
-        pipelineMode === "demo" && !extractedData
-          ? `На основе загруженного документа (${documentName}) могу показать только демонстрационный сценарий. В реальном режиме здесь будет ответ экстрактора по распознанному тексту.`
+        pipelineMode === "demo"
+          ? buildAnswerFromExtractor(question, documentName, activeDocType, structuredEntries, markdownPreview)
           : await (async () => {
               if (!mediaId) {
                 throw new Error("Не найден идентификатор документа для запроса к экстрактору");
@@ -699,16 +1005,10 @@ export function InteractiveDemo({
   if (!isOpen) return null;
 
   const documentName = documentInfo?.originalFilename || file?.name || "document.pdf";
-  const detectedDocType =
-    extractedData && typeof extractedData === "object" && "documentType" in extractedData && typeof extractedData.documentType === "string"
-      ? extractedData.documentType
-      : null;
-  const documentCardFacts = [
-    { label: "Статус", value: pipelineMode === "demo" ? "Демо-сценарий" : "Готов к вопросам" },
-    { label: "Тип", value: detectedDocType || getDocTypeLabel(docType) || "Не определён" },
-    { label: "Размер", value: formatBytes(documentInfo?.fileSize ?? file?.size) || "Неизвестно" },
-    { label: "Извлечено полей", value: String(structuredEntries.length) },
-  ];
+  const activeDocType = docType || normalizeDocTypeValue(documentInfo?.selectedDocType);
+  const documentCardFacts = activeDocType
+    ? buildDocumentSummaryFacts(activeDocType, structuredEntries, documentName)
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 sm:p-6">
@@ -935,7 +1235,7 @@ export function InteractiveDemo({
             )}
 
             {/* STEP 4: Result */}
-            {step === "result" && docType && (
+            {step === "result" && activeDocType && (
               <motion.div
                 key="result"
                 initial={{ opacity: 0 }}
@@ -956,7 +1256,7 @@ export function InteractiveDemo({
                   <div className="p-4 overflow-y-auto flex-1">
                     <div className="space-y-3">
                       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 text-sm font-semibold text-slate-900">Сводка</div>
+                        <div className="mb-3 text-sm font-semibold text-slate-900">Короткие реквизиты</div>
                         <div className="grid grid-cols-1 gap-3">
                           {documentCardFacts.map((fact) => (
                             <div key={fact.label} className="rounded-lg bg-slate-50 px-3 py-2">
@@ -966,33 +1266,13 @@ export function InteractiveDemo({
                           ))}
                         </div>
                       </div>
-                      {structuredEntries.map(({ key, value }) => (
-                        <div key={`${key}-${value}`} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm group">
-                          <div className="text-xs font-medium text-slate-500 mb-1">{key}</div>
-                          <div className="text-sm text-slate-900 font-medium flex items-start justify-between gap-2">
-                            <span className="break-words">{value}</span>
-                            <button
-                              onClick={() => handleCopy(value, key)}
-                              className="text-slate-400 hover:text-indigo-600 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                              title="Копировать"
-                            >
-                              {copiedKey === key ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                            </button>
-                          </div>
+                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm">
+                        <div className="text-sm font-semibold text-indigo-950">Полная карточка в чате</div>
+                        <div className="mt-2 text-sm leading-6 text-indigo-900/80">
+                          Первым сообщением справа показаны полные реквизиты и, если нужно, автоматическое уточнение типа документа.
                         </div>
-                      ))}
-                      {prettyMarkdownPreview && (
-                        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <div className="text-xs font-medium text-slate-500">Текст документа</div>
-                            <div className="text-[11px] uppercase tracking-[0.12em] text-slate-400">preview</div>
-                          </div>
-                          <div className="max-h-72 overflow-y-auto rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600 whitespace-pre-wrap">
-                            {prettyMarkdownPreview}
-                          </div>
-                        </div>
-                      )}
-                      {structuredEntries.length === 0 && !prettyMarkdownPreview && pipelineMode === "real" && (
+                      </div>
+                      {documentCardFacts.length === 0 && pipelineMode === "real" && (
                         <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
                           Экстрактор завершил обработку, но полезные поля не были найдены в ответе.
                         </div>
@@ -1050,7 +1330,7 @@ export function InteractiveDemo({
                   {/* Quick Prompts & Input */}
                   <div className="p-4 border-t border-slate-100 bg-white">
                     <div className="flex flex-wrap gap-2 mb-3">
-                      {QUICK_PROMPTS[docType].map((prompt, idx) => (
+                      {QUICK_PROMPTS[activeDocType].map((prompt, idx) => (
                         <button
                           key={idx}
                           onClick={() => handleSendMessage(prompt)}
