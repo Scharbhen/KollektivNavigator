@@ -297,7 +297,7 @@ function buildDemoDocumentCard(docType: Exclude<DocType, null>, documentName: st
   const facts = Object.entries(MOCK_METADATA[docType]).map(([label, value]) => ({ label, value }));
   return {
     detectedDocType: docType,
-    summary: `Документ обработан. Это ${getDocTypeLabel(docType)}.\n\nВот реквизиты по документу ${documentName}:\n- ${facts
+    summary: `Текст документа распознан. Тип документа: ${getDocTypeLabel(docType)}.\n\nВот реквизиты по документу ${documentName}:\n- ${facts
       .slice(0, 8)
       .map((fact) => `${fact.label}: ${fact.value}`)
       .join("\n- ")}`,
@@ -318,6 +318,52 @@ function cleanMarkdownPreview(markdown: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+function buildDocumentSnippet(markdown: string | null, maxLength = 280): string | null {
+  if (!markdown) return null;
+
+  const lines = cleanMarkdownPreview(markdown)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^страница\s+\d+\s*$/i.test(line));
+
+  if (lines.length === 0) return null;
+
+  let snippet = "";
+  for (const line of lines.slice(0, 6)) {
+    const next = snippet ? `${snippet} ${line}` : line;
+    if (next.length > maxLength) {
+      if (!snippet) {
+        snippet = `${line.slice(0, maxLength).trimEnd().replace(/[.,;:!?\s]+$/g, "")}...`;
+      }
+      break;
+    }
+
+    snippet = next;
+    if (snippet.length >= Math.min(180, maxLength)) {
+      break;
+    }
+  }
+
+  return snippet || null;
+}
+
+function buildRecognitionMessage(docType: DocType, markdown: string | null, tail?: string): string {
+  const docTypeLabel = getDocTypeLabel(docType);
+  const snippet = buildDocumentSnippet(markdown);
+  const parts = [
+    "Текст документа распознан.",
+    docTypeLabel ? `Тип документа: ${docTypeLabel}.` : null,
+    tail || null,
+  ].filter(Boolean);
+
+  if (!snippet) {
+    return parts.join(" ");
+  }
+
+  return `${parts.join(" ")}\n\nФрагмент документа:\n${snippet}`;
 }
 
 function extractRelevantLines(markdown: string, question: string): string[] {
@@ -380,7 +426,7 @@ function buildKeyPointsAnswer(entries: StructuredEntry[], markdown: string | nul
     return `Ключевые фрагменты текста:\n${lines.join("\n")}`;
   }
 
-  return "Не удалось выделить ключевые тезисы: в ответе экстрактора недостаточно структурированных данных.";
+  return "Не удалось выделить ключевые тезисы: в распознанном тексте и выделенных полях пока недостаточно данных.";
 }
 
 function buildAuthorAnswer(entries: StructuredEntry[], markdown: string | null): string {
@@ -447,7 +493,7 @@ function buildDocTypeAnswer(
       .join("\n- ")}`;
   }
 
-  return `Я не смог надёжно определить тип документа ${documentName} по ответу экстрактора.`;
+  return `Я не смог надёжно определить тип документа ${documentName} по распознанному тексту и извлечённым полям.`;
 }
 
 function buildAnswerFromExtractor(
@@ -501,7 +547,7 @@ function buildAnswerFromExtractor(
     return `Прямого ответа на вопрос в извлечённых полях не нашёл. Сейчас доступны такие данные:\n- ${fallback.join("\n- ")}`;
   }
 
-  return `Я не нашёл достаточно данных в ответе экстрактора, чтобы ответить на вопрос по документу ${documentName}.`;
+  return `Я не нашёл достаточно данных в распознанном тексте и извлечённых полях, чтобы ответить на вопрос по документу ${documentName}.`;
 }
 
 export function InteractiveDemo({
@@ -563,11 +609,13 @@ export function InteractiveDemo({
 
   const loadDocumentCard = async ({
     nextMediaId,
+    nextExtractedData,
     nextDocumentInfo,
     nextPipelineMode,
     resolvedDocType,
   }: {
     nextMediaId: string | null;
+    nextExtractedData: unknown;
     nextDocumentInfo: DocumentInfo;
     nextPipelineMode: PipelineMode;
     resolvedDocType: Exclude<DocType, null>;
@@ -579,7 +627,7 @@ export function InteractiveDemo({
       );
       setDocumentCard(demoCard);
       setDocumentCardLoading(false);
-      setChatHistory([{ role: "ai", text: demoCard.summary || "Документ обработан." }]);
+      setChatHistory([{ role: "ai", text: demoCard.summary || "Текст документа распознан." }]);
       return;
     }
 
@@ -588,7 +636,11 @@ export function InteractiveDemo({
       setChatHistory([
         {
           role: "ai",
-          text: "Документ обработан, но идентификатор для сборки карточки не найден.",
+          text: buildRecognitionMessage(
+            resolvedDocType,
+            extractMarkdownValue(nextExtractedData),
+            "Текст распознан, но идентификатор для сборки карточки не найден.",
+          ),
         },
       ]);
       return;
@@ -613,13 +665,18 @@ export function InteractiveDemo({
 
       setDocumentCard(payload.card);
       const detected = normalizeDocTypeValue(payload.card.detectedDocType);
+      const nextDocType = detected || resolvedDocType;
       if (detected && detected !== resolvedDocType) {
         setDocType(detected);
       }
       setChatHistory([
         {
           role: "ai",
-          text: payload.card.summary || "Документ обработан. Карточка документа собрана.",
+          text: `${buildRecognitionMessage(
+            nextDocType,
+            extractMarkdownValue(nextExtractedData),
+            "Анализ текста завершён, карточка документа собрана.",
+          )}${payload.card.summary ? `\n\n${payload.card.summary}` : ""}`,
         },
       ]);
     } catch (error) {
@@ -629,8 +686,16 @@ export function InteractiveDemo({
           role: "ai",
           text:
             error instanceof Error
-              ? `Документ обработан, но карточку собрать не удалось: ${error.message}`
-              : "Документ обработан, но карточку собрать не удалось.",
+              ? buildRecognitionMessage(
+                  resolvedDocType,
+                  extractMarkdownValue(nextExtractedData),
+                  `Текст распознан, но карточку документа собрать не удалось: ${error.message}`,
+                )
+              : buildRecognitionMessage(
+                  resolvedDocType,
+                  extractMarkdownValue(nextExtractedData),
+                  "Текст распознан, но карточку документа собрать не удалось.",
+                ),
         },
       ]);
     } finally {
@@ -664,11 +729,16 @@ export function InteractiveDemo({
       setChatHistory([
         {
           role: "ai",
-          text: "Документ обработан. Собираю карточку документа и реквизиты через extractor...",
+          text: buildRecognitionMessage(
+            resolvedDocType,
+            extractMarkdownValue(nextExtractedData),
+            "Идёт анализ текста и сбор карточки документа.",
+          ),
         },
       ]);
       void loadDocumentCard({
         nextMediaId,
+        nextExtractedData,
         nextDocumentInfo,
         nextPipelineMode,
         resolvedDocType,
@@ -770,8 +840,8 @@ export function InteractiveDemo({
       console.error("Failed to upload file:", e);
       setProcessingError(
         e instanceof Error
-          ? `Не удалось поставить задачу в очередь экстрактора: ${e.message}`
-          : "Не удалось поставить задачу в очередь экстрактора",
+          ? `Не удалось запустить анализ документа: ${e.message}`
+          : "Не удалось запустить анализ документа",
       );
     }
   };
@@ -832,10 +902,10 @@ export function InteractiveDemo({
           if (data.document) {
             setDocumentInfo(data.document);
           }
-          setProcessingError(data.error || "Экстрактор вернул ошибку обработки");
+          setProcessingError(data.error || "Сервис анализа вернул ошибку обработки");
         } else if (attempts >= maxAttempts) {
           clearInterval(interval);
-          setProcessingError("Превышено время ожидания ответа экстрактора");
+          setProcessingError("Превышено время ожидания результата анализа документа");
         }
       } catch (e) {
         console.error("Polling error:", e);
@@ -876,7 +946,7 @@ export function InteractiveDemo({
           ? buildAnswerFromExtractor(question, documentName, activeDocType, structuredEntries, markdownPreview)
           : await (async () => {
               if (!mediaId) {
-                throw new Error("Не найден идентификатор документа для запроса к экстрактору");
+                throw new Error("Не найден идентификатор документа для анализа");
               }
 
               const response = await fetch("/api/chat", {
@@ -894,7 +964,7 @@ export function InteractiveDemo({
               }
 
               if (!response.ok || !payload?.success || typeof payload.answer !== "string" || !payload.answer.trim()) {
-                throw new Error(payload?.error || `Не удалось получить ответ экстрактора (${response.status})`);
+                throw new Error(payload?.error || `Не удалось получить ответ по документу (${response.status})`);
               }
 
               return payload.answer as string;
@@ -931,6 +1001,8 @@ export function InteractiveDemo({
     normalizeDocTypeValue(documentCard?.detectedDocType) ||
     normalizeDocTypeValue(documentInfo?.selectedDocType);
   const documentCardFacts = documentCard?.shortFacts || [];
+  const documentSnippet = buildDocumentSnippet(markdownPreview);
+  const activeDocTypeLabel = getDocTypeLabel(activeDocType);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 sm:p-6">
@@ -1127,7 +1199,7 @@ export function InteractiveDemo({
                     </div>
 
                     <h3 className="text-xl font-bold text-slate-900 mb-6">
-                      ИИ Коллектив анализирует структуру...
+                      ИИ Коллектив анализирует текст документа...
                     </h3>
 
                     <div className="w-full max-w-md bg-slate-50 rounded-lg p-4 font-mono text-sm text-left border border-slate-100">
@@ -1178,10 +1250,25 @@ export function InteractiveDemo({
                   <div className="p-4 overflow-y-auto flex-1">
                     <div className="space-y-3">
                       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-3 text-sm font-semibold text-slate-900">Распознанный документ</div>
+                        <div className="rounded-lg bg-slate-50 px-3 py-2">
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Тип документа</div>
+                          <div className="mt-1 text-sm font-medium text-slate-900">
+                            {activeDocTypeLabel || "Определяется"}
+                          </div>
+                        </div>
+                        <div className="mt-3 rounded-lg bg-slate-50 px-3 py-3">
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Фрагмент текста</div>
+                          <div className="mt-2 text-sm leading-6 text-slate-700">
+                            {documentSnippet || "Текст документа распознан. Фрагмент появится после обработки содержимого."}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div className="mb-3 text-sm font-semibold text-slate-900">Короткие реквизиты</div>
                         {documentCardLoading ? (
                           <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">
-                            Extractor собирает реквизиты документа...
+                            Идёт анализ текста и сбор реквизитов документа...
                           </div>
                         ) : documentCardFacts.length > 0 ? (
                           <div className="grid grid-cols-1 gap-3">
@@ -1194,14 +1281,14 @@ export function InteractiveDemo({
                           </div>
                         ) : (
                           <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">
-                            Extractor не вернул короткие реквизиты для этого документа.
+                            Не удалось собрать короткие реквизиты по этому документу.
                           </div>
                         )}
                       </div>
                       <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm">
-                        <div className="text-sm font-semibold text-indigo-950">Полная карточка в чате</div>
+                        <div className="text-sm font-semibold text-indigo-950">Результат анализа в чате</div>
                         <div className="mt-2 text-sm leading-6 text-indigo-900/80">
-                          Первым сообщением справа показаны полные реквизиты, которые вернул extractor для этого документа.
+                          Первым сообщением справа показан итог анализа документа и извлечённые из текста данные.
                         </div>
                       </div>
                     </div>
