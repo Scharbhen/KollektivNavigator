@@ -39,7 +39,7 @@ type DocumentInfo = {
 
 const DOC_TYPES = [
   { id: "contract", label: "Договор", icon: FileText, desc: "Извлечение сторон, сумм, сроков" },
-  { id: "invoice", label: "Счет-фактура", icon: FileDigit, desc: "ИНН, КПП, суммы с НДС" },
+  { id: "invoice", label: "Счет / счет-фактура", icon: FileDigit, desc: "Плательщик, банк, суммы, НДС" },
   { id: "act", label: "Акт", icon: FileSpreadsheet, desc: "Позиции, подписанты, суммы" },
   { id: "free", label: "Свободный формат", icon: FileQuestion, desc: "Краткое резюме (Summary)" },
 ] as const;
@@ -242,6 +242,10 @@ function normalizeDocTypeValue(value: string | null | undefined): Exclude<DocTyp
 
   if (
     normalized.includes("invoice") ||
+    normalized.includes("счет на оплату") ||
+    normalized.includes("счёт на оплату") ||
+    normalized.includes("счет") ||
+    normalized.includes("счёт") ||
     normalized.includes("счет-фактур") ||
     normalized.includes("счёт-фактур")
   ) {
@@ -449,7 +453,7 @@ function buildAuthorAnswer(entries: StructuredEntry[], markdown: string | null):
 
 function getDocTypeLabel(docType: DocType): string | null {
   if (docType === "contract") return "договор";
-  if (docType === "invoice") return "счёт-фактура";
+  if (docType === "invoice") return "счёт";
   if (docType === "act") return "акт";
   if (docType === "free") return "документ свободного формата";
   return null;
@@ -627,7 +631,7 @@ export function InteractiveDemo({
       );
       setDocumentCard(demoCard);
       setDocumentCardLoading(false);
-      setChatHistory([{ role: "ai", text: demoCard.summary || "Текст документа распознан." }]);
+      setChatHistory([{ role: "ai", text: demoCard?.summary || "Текст документа распознан." }]);
       return;
     }
 
