@@ -325,8 +325,8 @@ export function Calculator() {
 
               <div className="space-y-6">
                 <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-400">До внедрения (Хаос)</span>
+                  <div className="mb-2 flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-slate-400">До внедрения</span>
                     <span className="text-red-400">{searchTime} ч. потери</span>
                   </div>
                   <div className="h-4 bg-slate-800 rounded-full overflow-hidden flex">
@@ -342,10 +342,8 @@ export function Calculator() {
                 </div>
 
                 <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-400">
-                      С ИИ Коллектив (Порядок)
-                    </span>
+                  <div className="mb-2 flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-slate-400">С ИИ Коллектив</span>
                     <span className="text-emerald-400">
                       Экономия {(searchTime * K_EFF).toFixed(1)} ч.
                     </span>
@@ -719,15 +717,15 @@ export function Calculator() {
               6. Инфографика: До и После
             </h2>
             <div
-              style={{ width: "100%", height: "256px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e2e8f0", overflow: "hidden", position: "relative", backgroundColor: "#f1f5f9" }}
+              style={{ width: "100%", minHeight: "256px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e2e8f0", overflow: "hidden", position: "relative", backgroundColor: "#f1f5f9" }}
             >
-              <div style={{ textAlign: "center", padding: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "32px", width: "100%" }}>
-                  <div style={{ flex: 1, backgroundColor: "#fee2e2", padding: "16px", borderRadius: "8px", border: "1px solid #fca5a5" }}>
+              <div style={{ width: "100%", textAlign: "center", padding: "24px" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "16px", width: "100%" }}>
+                  <div style={{ flex: "1 1 240px", minWidth: "220px", backgroundColor: "#fee2e2", padding: "16px", borderRadius: "8px", border: "1px solid #fca5a5" }}>
                     <h4 style={{ color: "#991b1b", fontWeight: "bold", marginBottom: "8px" }}>До внедрения</h4>
-                    <p style={{ color: "#7f1d1d", fontSize: "14px" }}>Хаос в данных, долгий поиск, разрозненные источники, потеря экспертизы при увольнении.</p>
+                    <p style={{ color: "#7f1d1d", fontSize: "14px" }}>Долгий поиск, разрозненные источники, потеря контекста и зависимость от отдельных сотрудников.</p>
                   </div>
-                  <div style={{ flex: 1, backgroundColor: "#d1fae5", padding: "16px", borderRadius: "8px", border: "1px solid #6ee7b7" }}>
+                  <div style={{ flex: "1 1 240px", minWidth: "220px", backgroundColor: "#d1fae5", padding: "16px", borderRadius: "8px", border: "1px solid #6ee7b7" }}>
                     <h4 style={{ color: "#065f46", fontWeight: "bold", marginBottom: "8px" }}>После внедрения</h4>
                     <p style={{ color: "#064e3b", fontSize: "14px" }}>Единая точка доступа, мгновенные ответы, сохранение знаний, автоматизация рутины.</p>
                   </div>
