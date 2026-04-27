@@ -44,9 +44,9 @@ export function Hero() {
             transition={{ duration: 0.5, delay: 0.1 }}
             className="text-5xl md:text-6xl lg:text-7xl font-display font-bold text-white tracking-tight leading-[1.1] mb-6"
           >
-            ИИ-навигатор по данным <br className="hidden md:block" />
+            Внедряем интеллектуальную <br className="hidden md:block" />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-emerald-400">
-              вашей компании
+              обработку документов на ИИ (IDP)
             </span>
           </motion.h1>
 
@@ -56,7 +56,7 @@ export function Hero() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="text-xl md:text-2xl text-slate-300 mb-4 font-medium"
           >
-            Найдите ответ в почте, папках и 1С за 2 секунды.
+            ИИ Коллектив распознаёт договоры, счета, акты и сканы, извлекает нужные данные и готовит их для ваших учётных систем.
           </motion.p>
 
           <motion.p
@@ -65,9 +65,8 @@ export function Hero() {
             transition={{ duration: 0.5, delay: 0.3 }}
             className="text-lg text-slate-400 mb-10 max-w-3xl mx-auto leading-relaxed"
           >
-            ИИ Коллектив объединяет разрозненные знания в едином окне. Он
-            понимает смысл ваших документов и переписки, избавляя команду от
-            бесконечного поиска и рутины. Работает внутри вашего ИТ-контура.
+            Сокращаем ручной ввод, сверку реквизитов и поиск по папкам, почте и
+            архивам. Решение разворачивается внутри вашего ИТ-контура.
           </motion.p>
 
           <motion.div
@@ -104,7 +103,7 @@ export function Hero() {
               Как работает ИИ Коллектив
             </h3>
             <p className="text-slate-400 max-w-2xl mx-auto">
-              Интеллектуальный слой, который объединяет ваши данные, понимает их смысл и выдает готовые ответы с учетом прав доступа.
+              Интеллектуальный слой над вашими документами и системами: подключает источники, понимает содержание файлов, извлекает нужные данные и выдает готовый результат с учетом прав доступа.
             </p>
           </div>
 
@@ -123,7 +122,7 @@ export function Hero() {
               </div>
               <h4 className="text-lg font-bold text-white mb-3">1. Подключение баз</h4>
               <p className="text-sm text-slate-400 mb-6">
-                Безопасная интеграция с вашими текущими системами без переноса данных.
+                Безопасно подключаемся к вашим текущим системам без переноса данных и без перестройки процессов.
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 <span className="px-2 py-1 bg-slate-800 rounded text-xs text-slate-300 border border-white/5">1C:Предприятие</span>
@@ -144,20 +143,20 @@ export function Hero() {
               </div>
               <h4 className="text-lg font-bold text-white mb-3">2. Нейро-индексация</h4>
               <p className="text-sm text-indigo-200/70 mb-6">
-                ИИ читает документы, понимает контекст, извлекает сущности и строит граф связей.
+                ИИ читает документы, понимает контекст, извлекает сущности, связывает письма, договоры, счета, акты и приложения в единый слой данных.
               </p>
               <ul className="text-left text-sm text-slate-300 space-y-2 w-full">
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>VLM-зрение (вместо OCR)</span>
+                  <span>VLM-зрение вместо обычного OCR</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>Векторный поиск по смыслу</span>
+                  <span>Извлечение реквизитов и сущностей из реальных документов</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>Строгий контроль прав (ACL)</span>
+                  <span>Поиск по смыслу и строгий контроль прав доступа</span>
                 </li>
               </ul>
             </div>
@@ -169,7 +168,7 @@ export function Hero() {
               </div>
               <h4 className="text-lg font-bold text-white mb-3">3. Мгновенный ответ</h4>
               <p className="text-sm text-slate-400 mb-6">
-                Сотрудник задает вопрос естественным языком и получает синтезированный ответ со ссылками.
+                Сотрудник задает вопрос на обычном языке или открывает документ — и сразу получает не хаос файлов, а готовый ответ, карточку документа или проверку по комплекту.
               </p>
               <div className="w-full bg-slate-950 rounded-xl p-3 border border-white/5 text-left">
                 <div className="text-xs text-slate-500 mb-1">Запрос:</div>

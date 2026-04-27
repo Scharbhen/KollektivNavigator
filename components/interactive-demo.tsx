@@ -47,7 +47,12 @@ const DOC_TYPES = [
 const DEMO_DOCUMENT_TYPES = DOC_TYPES.map((type) => type.label);
 
 const QUICK_PROMPTS = {
-  contract: ["Какие здесь штрафные санкции?", "Как расторгнуть этот договор?", "Каковы сроки оплаты?"],
+  contract: [
+    "Собери полную таблицу реквизитов сторон и сумму договора",
+    "Какие здесь штрафные санкции?",
+    "Как расторгнуть этот договор?",
+    "Каковы сроки оплаты?",
+  ],
   invoice: ["Совпадают ли суммы с НДС и без?", "Кто плательщик?", "Укажи реквизиты банка"],
   act: ["Совпадают ли суммы в тексте?", "Кто подписант?", "Какие услуги оказаны?"],
   free: ["Составь краткое резюме документа", "Выдели ключевые тезисы", "Кто автор документа?"],
@@ -98,12 +103,12 @@ const MOCK_METADATA = {
 };
 
 const PROCESSING_LOGS = [
-  "Инициализация OCR-движка...",
-  "Распознавание текстового слоя...",
-  "Извлечение реквизитов и сущностей...",
-  "Построение семантических связей...",
-  "Индексация в векторной базе данных...",
-  "Формирование метаданных...",
+  "Документ принят. Обычно обработка занимает 1-3 минуты.",
+  "Извините за ожидание: задача стоит в очереди на анализ.",
+  "Ждём свободный слот распознавания, чтобы не перегружать сервис.",
+  "Для больших PDF и сканов ожидание может занять до 30 минут.",
+  "Обработка идёт. Как только результат будет готов, мы покажем его здесь.",
+  "Почти готово: получаем ответ сервиса анализа.",
   "Готово.",
 ];
 
@@ -312,6 +317,8 @@ function buildDemoDocumentCard(docType: Exclude<DocType, null>, documentName: st
 
 function cleanMarkdownPreview(markdown: string): string {
   return markdown
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n")
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|tr|li|h\d|table|thead|tbody)>/gi, "\n")
     .replace(/<(p|div|tr|li|h\d|table|thead|tbody)[^>]*>/gi, "\n")
@@ -324,34 +331,22 @@ function cleanMarkdownPreview(markdown: string): string {
     .trim();
 }
 
-function buildDocumentSnippet(markdown: string | null, maxLength = 280): string | null {
+function buildDocumentSnippet(markdown: string | null, maxLines = 5): string | null {
   if (!markdown) return null;
 
   const lines = cleanMarkdownPreview(markdown)
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => !/^страница\s+\d+\s*$/i.test(line));
+    .filter((line) => !/^страница\s+\d+\s*$/i.test(line))
+    .filter((line) => !/^[\s\\n\\r.,;:!?\-–—_]+$/.test(line));
 
   if (lines.length === 0) return null;
 
-  let snippet = "";
-  for (const line of lines.slice(0, 6)) {
-    const next = snippet ? `${snippet} ${line}` : line;
-    if (next.length > maxLength) {
-      if (!snippet) {
-        snippet = `${line.slice(0, maxLength).trimEnd().replace(/[.,;:!?\s]+$/g, "")}...`;
-      }
-      break;
-    }
-
-    snippet = next;
-    if (snippet.length >= Math.min(180, maxLength)) {
-      break;
-    }
-  }
-
-  return snippet || null;
+  return lines
+    .slice(0, maxLines)
+    .map((line) => (line.length > 160 ? `${line.slice(0, 157).trimEnd()}...` : line))
+    .join("\n");
 }
 
 function buildRecognitionMessage(docType: DocType, markdown: string | null, tail?: string): string {
@@ -451,6 +446,32 @@ function buildAuthorAnswer(entries: StructuredEntry[], markdown: string | null):
   return "Я не нашёл в извлечённых данных явного указания на автора или подписанта документа.";
 }
 
+function buildContractRequisitesAnswer(entries: StructuredEntry[], documentName: string): string {
+  const isPartyField = (entry: StructuredEntry) =>
+    /(заказчик|исполнитель|поставщик|покупатель|продавец|сторона|инн|кпп|огрн|адрес|банк|бик|сч[её]т|корр|получатель|плательщик)/i.test(
+      `${entry.key} ${entry.value}`,
+    );
+  const isAmountField = (entry: StructuredEntry) => /(сумм|итого|цена|стоимость)/i.test(entry.key);
+
+  const rows = entries.filter((entry) => isPartyField(entry) || isAmountField(entry));
+  const displayedRows = rows.length > 0 ? rows : entries.slice(0, 8);
+
+  if (displayedRows.length === 0) {
+    return `В документе ${documentName} пока не удалось выделить реквизиты сторон и сумму договора.`;
+  }
+
+  return [
+    `Собрал таблицу реквизитов сторон и суммы по документу ${documentName}:`,
+    "",
+    "| Блок | Поле | Значение |",
+    "|---|---|---|",
+    ...displayedRows.map((entry) => {
+      const block = isAmountField(entry) ? "Сумма договора" : "Реквизиты сторон";
+      return `| ${block} | ${entry.key} | ${entry.value} |`;
+    }),
+  ].join("\n");
+}
+
 function getDocTypeLabel(docType: DocType): string | null {
   if (docType === "contract") return "договор";
   if (docType === "invoice") return "счёт";
@@ -523,6 +544,10 @@ function buildAnswerFromExtractor(
 
   if (/кто.*автор|кто.*подпис|автор|подписант/.test(normalizedQuestion)) {
     return buildAuthorAnswer(entries, markdown);
+  }
+
+  if (/реквизит.*сторон|сторон.*реквизит|таблиц.*реквизит|сумм.*договор|договор.*сумм/.test(normalizedQuestion)) {
+    return buildContractRequisitesAnswer(entries, documentName);
   }
 
   const matchedEntries = entries.filter((entry) => {
@@ -852,7 +877,7 @@ export function InteractiveDemo({
 
   const pollResults = async (mediaId: string) => {
     let attempts = 0;
-    const maxAttempts = 60; // 5 minutes max
+    const maxAttempts = 360; // 30 minutes max for multi-page scans
     
     const interval = setInterval(async () => {
       try {
@@ -1203,7 +1228,7 @@ export function InteractiveDemo({
                     </div>
 
                     <h3 className="text-xl font-bold text-slate-900 mb-6">
-                      ИИ Коллектив анализирует текст документа...
+                      Документ поставлен в очередь на анализ
                     </h3>
 
                     <div className="w-full max-w-md bg-slate-50 rounded-lg p-4 font-mono text-sm text-left border border-slate-100">

@@ -46,6 +46,8 @@ export function Calculator() {
   const reportRef = useRef<HTMLDivElement>(null);
 
   // Constants
+  const WORKDAY_HOURS = 8;
+  const WORK_MONTH_HOURS = 160;
   const K_EFF = 0.7; // 70% of search time saved
   const ONBOARDING_ACCEL = 0.3; // 30% faster onboarding
   const EXPERT_SHARE = 0.1; // 10% are experts
@@ -53,7 +55,7 @@ export function Calculator() {
   const EXPERT_TIME_SAVED = 0.05; // 5% time saved for experts
 
   // Calculations
-  const searchTimePercent = searchTime / 8; // Assuming 8-hour workday
+  const searchTimePercent = searchTime / WORKDAY_HOURS;
   const searchSavings = employees * salary * 12 * searchTimePercent * K_EFF;
   const onboardingSavings =
     employees * (turnover / 100) * salary * 2 * ONBOARDING_ACCEL;
@@ -67,7 +69,7 @@ export function Calculator() {
   const totalSavings = searchSavings + onboardingSavings + expertSavings;
   const targetRoi = 3; // 300%
   const maxProjectCost = totalSavings / (targetRoi + 1);
-  const hoursFreed = employees * 160 * searchTimePercent * K_EFF;
+  const hoursFreed = employees * WORK_MONTH_HOURS * searchTimePercent * K_EFF;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("ru-RU", {
@@ -75,6 +77,10 @@ export function Calculator() {
       currency: "RUB",
       maximumFractionDigits: 0,
     }).format(value);
+  };
+
+  const formatNumber = (value: number) => {
+    return Math.round(value).toLocaleString("ru-RU");
   };
 
   const generateReport = async (e?: React.FormEvent | React.MouseEvent | React.KeyboardEvent) => {
@@ -113,7 +119,20 @@ export function Calculator() {
         const elHeight = reportRef.current.offsetHeight;
         const pdfHeight = (elHeight * pdfWidth) / elWidth;
 
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        let heightLeft = pdfHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - pdfHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+          heightLeft -= pageHeight;
+        }
+
         pdf.save("ROI_Report_II_Kollektiv.pdf");
 
         // Save lead data
@@ -160,11 +179,10 @@ export function Calculator() {
             <CalcIcon className="w-8 h-8 text-indigo-400" />
           </div>
           <h2 className="text-3xl md:text-4xl font-display font-bold text-white mb-4">
-            Калькулятор возврата инвестиций в капитал знаний
+            Калькулятор экономического эффекта
           </h2>
           <p className="text-lg text-slate-400">
-            Рассчитайте годовую экономию и высвобожденные часы для вашей
-            команды.
+            Посчитайте на своих данных, какой эффект вы получите от нашего решения.
           </p>
         </div>
 
@@ -201,7 +219,9 @@ export function Calculator() {
                   className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                 />
                 <p className="text-xs text-slate-500 mt-2">
-                  Общее число офисных сотрудников, работающих с документами.
+                  Общее число офисных сотрудников, которые ищут документы,
+                  заполняют карточки, сверяют реквизиты или работают с входящей
+                  информацией.
                 </p>
               </div>
 
@@ -249,8 +269,8 @@ export function Calculator() {
                   className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                 />
                 <p className="text-xs text-slate-500 mt-2">
-                  Сколько часов в день сотрудники тратят на поиск файлов и
-                  ответов?
+                  Сколько часов сотрудники тратят на поиск файлов, переписки,
+                  версий документов, приложений и условий.
                 </p>
               </div>
 
@@ -274,8 +294,8 @@ export function Calculator() {
                   className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                 />
                 <p className="text-xs text-slate-500 mt-2">
-                  Сколько сотрудников меняется за год (влияет на расчет
-                  онбординга).
+                  Сколько сотрудников меняется за год и сколько времени компания
+                  тратит на повторную передачу знаний.
                 </p>
               </div>
             </div>
@@ -308,7 +328,7 @@ export function Calculator() {
                 </div>
                 <div>
                   <div className="text-indigo-200 text-sm mb-1">
-                    Бюджет для ROI 300%
+                    Бюджет для целевого ROI
                   </div>
                   <div className="text-2xl font-bold text-white">
                     <AnimatedNumber value={maxProjectCost} />
@@ -378,7 +398,8 @@ export function Calculator() {
                     защиты перед руководством?
                   </h3>
                   <p className="text-sm text-slate-400">
-                    Готовое бизнес-обоснование с инфографикой и расчетами.
+                    Мы подготовим готовое бизнес-обоснование с расчетами, цифрами
+                    и инфографикой.
                   </p>
                 </div>
               </div>
@@ -449,40 +470,103 @@ export function Calculator() {
                 color: "#0f172a" 
               }}
             >
-              Экономическое обоснование внедрения системы управления знаниями ИИ
-              Коллектив
+              Экономический эффект от внедрения ИИ Коллектива
             </h1>
             <p style={{ color: "#64748b" }} suppressHydrationWarning>
-              Подготовил: {email || "Пользователь"} | Дата:{" "}
-              {currentDate}
+              Дата расчета: {currentDate}
             </p>
           </div>
 
           <div style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
-              1. Резюме для руководства (Executive Summary)
+              1. Предложение и следующий шаг
             </h2>
             <p style={{ marginBottom: "8px" }}>
-              <strong>Цель проекта:</strong> Повышение операционной
-              эффективности подразделения за счет внедрения ИИ-навигатора по
-              корпоративным данным.
-            </p>
-            <p style={{ marginBottom: "8px" }}>
-              <strong>Ключевая проблема:</strong> Сотрудники тратят до{" "}
-              {searchTime} ч. в день на «цифровую археологию» — поиск информации
-              в почте, сетевых папках и мессенджерах. Это эквивалентно потере{" "}
-              {formatCurrency(searchSavings)} ежегодно.
+              Мы предлагаем провести короткий звонок, уточнить ваш сценарий
+              работы с документами и запустить бесплатный пилот на реальных
+              данных вашей компании. Пилот позволит проверить качество
+              распознавания, извлечения реквизитов и поиска по вашим документам,
+              а также оценить фактический экономический эффект до полноценного
+              внедрения.
             </p>
             <p>
-              <strong>Решение:</strong> ИИ Коллектив — интеллектуальный слой над
-              существующими системами, который находит ответы и документы за 2
-              секунды без ручной разметки и тегов.
+              Ниже приведен предварительный расчет на основе данных, которые вы
+              указали в калькуляторе. Он показывает ориентировочный порядок
+              экономии за счет сокращения ручного поиска, сверки документов,
+              заполнения карточек и повторного восстановления контекста
+              сотрудниками.
             </p>
           </div>
 
           <div style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
-              2. Расчет экономического эффекта
+              2. Кратко о решении
+            </h2>
+            <p style={{ marginBottom: "8px" }}>
+              ИИ Коллектив работает поверх существующих источников: почты,
+              сетевых папок, СЭД, 1С и архивов документов. Система понимает
+              содержание файлов, извлекает реквизиты, собирает карточки
+              документов, помогает проверять комплектность и отвечает на вопросы
+              сотрудников на обычном языке.
+            </p>
+            <p>
+              В результате сотрудники меньше времени тратят на ручной поиск,
+              сверку, перенос данных и восстановление контекста по переписке или
+              старым документам.
+            </p>
+          </div>
+
+          <div style={{ marginBottom: "32px" }}>
+            <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
+              3. Исходные данные для расчета
+            </h2>
+            <table
+              style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #e2e8f0", marginBottom: "12px" }}
+            >
+              <tbody>
+                <tr>
+                  <td style={{ border: "1px solid #e2e8f0", padding: "10px", fontWeight: "500" }}>
+                    Количество сотрудников
+                  </td>
+                  <td style={{ border: "1px solid #e2e8f0", padding: "10px" }}>
+                    {employees}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ border: "1px solid #e2e8f0", padding: "10px", fontWeight: "500" }}>
+                    Средняя зарплата gross
+                  </td>
+                  <td style={{ border: "1px solid #e2e8f0", padding: "10px" }}>
+                    {formatCurrency(salary)} / месяц
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ border: "1px solid #e2e8f0", padding: "10px", fontWeight: "500" }}>
+                    Время на поиск и разбор данных
+                  </td>
+                  <td style={{ border: "1px solid #e2e8f0", padding: "10px" }}>
+                    {searchTime} ч. в день на сотрудника
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ border: "1px solid #e2e8f0", padding: "10px", fontWeight: "500" }}>
+                    Текучесть кадров
+                  </td>
+                  <td style={{ border: "1px solid #e2e8f0", padding: "10px" }}>
+                    {turnover}% в год
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p style={{ fontSize: "13px", color: "#64748b" }}>
+              Допущение: рабочий день принят за {WORKDAY_HOURS} часов, рабочий
+              месяц — за {WORK_MONTH_HOURS} часов.
+            </p>
+          </div>
+
+          <div style={{ marginBottom: "32px" }}>
+            <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
+              4. Итоговый предварительный расчет
             </h2>
             <table
               style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #e2e8f0", marginBottom: "16px" }}
@@ -504,7 +588,7 @@ export function Calculator() {
               <tbody>
                 <tr>
                   <td style={{ border: "1px solid #e2e8f0", padding: "12px" }}>
-                    Прямая экономия ФОТ (высвобождение FTE)
+                    Суммарная экономия в год
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "12px", fontWeight: "bold", color: "#059669" }}
@@ -514,12 +598,12 @@ export function Calculator() {
                 </tr>
                 <tr>
                   <td style={{ border: "1px solid #e2e8f0", padding: "12px" }}>
-                    Ускорение выхода на мощность новых сотрудников
+                    Высвобождено времени
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "12px", fontWeight: "bold" }}
                   >
-                    на {ONBOARDING_ACCEL * 100}%
+                    {formatNumber(hoursFreed)} ч/мес
                   </td>
                 </tr>
                 <tr>
@@ -534,7 +618,7 @@ export function Calculator() {
                 </tr>
                 <tr>
                   <td style={{ border: "1px solid #e2e8f0", padding: "12px" }}>
-                    Максимальный бюджет проекта (для достижения ROI 300%)
+                    Максимальный бюджет проекта
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "12px", fontWeight: "bold", color: "#059669" }}
@@ -544,58 +628,78 @@ export function Calculator() {
                 </tr>
               </tbody>
             </table>
+            <p style={{ fontSize: "14px" }}>
+              Это не абстрактная эффективность, а оценка возврата времени
+              сотрудников, снижения повторного сбора знаний и уменьшения ручной
+              работы с документами.
+            </p>
           </div>
 
           <div style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
-              3. Где скрываются потери сегодня?
+              5. Как считается экономия
             </h2>
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div>
-                <h3 style={{ fontWeight: "bold" }}>А. Стоимость «поиска»</h3>
-                <p style={{ fontSize: "14px" }}>
-                  В среднем сотрудник тратит {searchTime} ч. в день на поиск
-                  актуальной версии договора, условий спецификации или истории
-                  переписки.
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "16px" }}>
+                <h3 style={{ fontWeight: "bold", marginBottom: "8px" }}>
+                  1. Экономия на поиске и ручном разборе документов
+                </h3>
+                <p style={{ fontSize: "14px", marginBottom: "6px" }}>
+                  <strong>Формула:</strong> сотрудники × зарплата × 12 × доля
+                  рабочего дня на поиск × 70%.
                 </p>
-                <p
-                  style={{ fontSize: "14px", color: "#047857", backgroundColor: "#ecfdf5", padding: "8px", marginTop: "4px", borderRadius: "4px" }}
-                >
-                  <strong>С ИИ Коллектив:</strong> Время поиска сокращается до{" "}
-                  {(searchTime * (1 - K_EFF) * 60).toFixed(0)} минут в день.
-                  Высвобожденное время перераспределяется на выполнение
-                  профильных задач.
+                <p style={{ fontSize: "14px", marginBottom: "6px" }}>
+                  Если сотрудник тратит {searchTime} ч. в день на поиск файлов,
+                  сверку документов, разбор писем и перенос данных, это примерно{" "}
+                  {Math.round(searchTimePercent * 100)}% рабочего дня. В расчете
+                  заложено, что ИИ Коллектив сокращает эту нагрузку на{" "}
+                  {K_EFF * 100}%, потому что часть операций остается за
+                  человеком: принятие решения, проверка результата и
+                  согласование.
                 </p>
-              </div>
-              <div>
-                <h3 style={{ fontWeight: "bold" }}>Б. Деградация экспертизы</h3>
-                <p style={{ fontSize: "14px" }}>
-                  При увольнении сотрудника компания теряет до 70% накопленных
-                  им знаний. Новые сотрудники вынуждены «изобретать велосипед»,
-                  тратя ресурсы компании на повторное создание уже существующих
-                  решений.
-                </p>
-                <p
-                  style={{ fontSize: "14px", color: "#047857", backgroundColor: "#ecfdf5", padding: "8px", marginTop: "4px", borderRadius: "4px" }}
-                >
-                  <strong>С ИИ Коллектив:</strong> Система сохраняет
-                  «институциональную память». Любое решение, файл или письмо
-                  остаются доступны преемнику мгновенно.
+                <p style={{ fontSize: "14px", fontWeight: "bold", color: "#059669" }}>
+                  Результат: {formatCurrency(searchSavings)} / год
                 </p>
               </div>
-              <div>
-                <h3 style={{ fontWeight: "bold" }}>В. Операционные риски</h3>
-                <p style={{ fontSize: "14px" }}>
-                  Использование неактуальных версий документов или потеря
-                  критически важных условий в переписке ведут к штрафам и
-                  юридическим спорам.
+
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "16px" }}>
+                <h3 style={{ fontWeight: "bold", marginBottom: "8px" }}>
+                  2. Экономия на онбординге новых сотрудников
+                </h3>
+                <p style={{ fontSize: "14px", marginBottom: "6px" }}>
+                  <strong>Формула:</strong> сотрудники × текучесть × зарплата × 2
+                  месяца × 30%.
                 </p>
-                <p
-                  style={{ fontSize: "14px", color: "#047857", backgroundColor: "#ecfdf5", padding: "8px", marginTop: "4px", borderRadius: "4px" }}
-                >
-                  <strong>С ИИ Коллектив:</strong> 100% контроль входящей
-                  информации. ИИ подсвечивает расхождения в данных до того, как
-                  они станут финансовой проблемой.
+                <p style={{ fontSize: "14px", marginBottom: "6px" }}>
+                  При смене сотрудников компания теряет контекст: где лежат
+                  документы, почему принимались решения, какая переписка важна и
+                  какие версии файлов актуальны. Мы считаем, что новый сотрудник
+                  обычно тратит до двух месяцев на восстановление контекста, а
+                  ИИ Коллектив сокращает этот период на {ONBOARDING_ACCEL * 100}%.
+                </p>
+                <p style={{ fontSize: "14px", fontWeight: "bold", color: "#059669" }}>
+                  Результат: {formatCurrency(onboardingSavings)} / год
+                </p>
+              </div>
+
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "16px" }}>
+                <h3 style={{ fontWeight: "bold", marginBottom: "8px" }}>
+                  3. Сохранение экспертизы ключевых сотрудников
+                </h3>
+                <p style={{ fontSize: "14px", marginBottom: "6px" }}>
+                  <strong>Формула:</strong> сотрудники × 10% экспертов × зарплата
+                  × 12 × 1.5 × 5%.
+                </p>
+                <p style={{ fontSize: "14px", marginBottom: "6px" }}>
+                  Часть сотрудников обладает критичной экспертизой: знает историю
+                  договоров, клиентов, внутренних решений и исключений. В модели
+                  принято, что таких сотрудников около {EXPERT_SHARE * 100}%, их
+                  стоимость для бизнеса выше средней, а система возвращает
+                  минимум {EXPERT_TIME_SAVED * 100}% их времени за счет быстрого
+                  доступа к контексту и документам.
+                </p>
+                <p style={{ fontSize: "14px", fontWeight: "bold", color: "#059669" }}>
+                  Результат: {formatCurrency(expertSavings)} / год
                 </p>
               </div>
             </div>
@@ -603,7 +707,59 @@ export function Calculator() {
 
           <div style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
-              4. Сравнение с альтернативами
+              6. Где скрываются потери сегодня?
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <h3 style={{ fontWeight: "bold" }}>А. Стоимость поиска</h3>
+                <p style={{ fontSize: "14px" }}>
+                  Сотрудники тратят до {searchTime} ч. в день на поиск актуальной
+                  версии договора, приложений, условий спецификации, истории
+                  переписки и нужных документов.
+                </p>
+                <p
+                  style={{ fontSize: "14px", color: "#047857", backgroundColor: "#ecfdf5", padding: "8px", marginTop: "4px", borderRadius: "4px" }}
+                >
+                  <strong>С ИИ Коллективом:</strong> Это время резко сокращается,
+                  а сотрудники возвращаются к основной работе.
+                </p>
+              </div>
+              <div>
+                <h3 style={{ fontWeight: "bold" }}>Б. Деградация экспертизы</h3>
+                <p style={{ fontSize: "14px" }}>
+                  При увольнении или переходе сотрудника компания теряет накопленный
+                  контекст. Новые сотрудники повторно собирают знания из писем,
+                  папок, переписки и устных объяснений.
+                </p>
+                <p
+                  style={{ fontSize: "14px", color: "#047857", backgroundColor: "#ecfdf5", padding: "8px", marginTop: "4px", borderRadius: "4px" }}
+                >
+                  <strong>С ИИ Коллективом:</strong> Система сохраняет
+                  институциональную память. Любое решение, файл или письмо
+                  остаются доступны преемнику мгновенно.
+                </p>
+              </div>
+              <div>
+                <h3 style={{ fontWeight: "bold" }}>В. Операционные риски</h3>
+                <p style={{ fontSize: "14px" }}>
+                  Использование неактуальных версий документов, потеря критичных
+                  условий в переписке и ручные ошибки в реквизитах ведут к
+                  штрафам, задержкам и спорам.
+                </p>
+                <p
+                  style={{ fontSize: "14px", color: "#047857", backgroundColor: "#ecfdf5", padding: "8px", marginTop: "4px", borderRadius: "4px" }}
+                >
+                  <strong>С ИИ Коллективом:</strong> ИИ подсвечивает расхождения и
+                  помогает выявлять проблемы до того, как они становятся
+                  финансовой ошибкой.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "32px" }}>
+            <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
+              7. Сравнение с альтернативами
             </h2>
             <table
               style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #e2e8f0", fontSize: "14px" }}
@@ -635,12 +791,12 @@ export function Calculator() {
                     Внедрение
                   </td>
                   <td style={{ border: "1px solid #e2e8f0", padding: "8px" }}>
-                    Месяцы/Годы (требуется миграция данных)
+                    Месяцы внедрения, миграция данных, жесткие правила именования
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "8px", fontWeight: "bold", color: "#4338ca" }}
                   >
-                    1-2 недели (работает поверх текущих папок)
+                    Работает поверх текущих источников и понимает смысл документов
                   </td>
                 </tr>
                 <tr>
@@ -650,12 +806,12 @@ export function Calculator() {
                     Обучение персонала
                   </td>
                   <td style={{ border: "1px solid #e2e8f0", padding: "8px" }}>
-                    Сложное (нужно учить правила именования и теги)
+                    Сложная навигация и ручная дисциплина пользователей
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "8px", fontWeight: "bold", color: "#4338ca" }}
                   >
-                    Не требуется (интерфейс «как в Google»)
+                    Обычный язык, поиск по смыслу и готовые данные
                   </td>
                 </tr>
                 <tr>
@@ -665,12 +821,12 @@ export function Calculator() {
                     Точность поиска
                   </td>
                   <td style={{ border: "1px solid #e2e8f0", padding: "8px" }}>
-                    Поиск по буквам (часто ничего не находит)
+                    Поиск по буквам, часто без понимания контекста
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "8px", fontWeight: "bold", color: "#4338ca" }}
                   >
-                    Поиск по смыслу (понимает контекст запроса)
+                    Поиск по смыслу, извлечение данных и ответы с источниками
                   </td>
                 </tr>
                 <tr>
@@ -680,12 +836,12 @@ export function Calculator() {
                     Безопасность
                   </td>
                   <td style={{ border: "1px solid #e2e8f0", padding: "8px" }}>
-                    Облачные решения несут риск утечки
+                    Зависит от выбранной системы и схемы хранения
                   </td>
                   <td
                     style={{ border: "1px solid #e2e8f0", padding: "8px", fontWeight: "bold", color: "#4338ca" }}
                   >
-                    On-premise (полностью в вашем контуре)
+                    On-premise или защищенное облако под требования заказчика
                   </td>
                 </tr>
               </tbody>
@@ -694,7 +850,7 @@ export function Calculator() {
 
           <div style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
-              5. Техническая надежность и безопасность
+              8. Техническая надежность и безопасность
             </h2>
             <ul style={{ paddingLeft: "20px", fontSize: "14px", display: "flex", flexDirection: "column", gap: "8px" }}>
               <li>
@@ -702,19 +858,19 @@ export function Calculator() {
                 (On-premise).
               </li>
               <li>
-                <strong>Privacy:</strong> Данные не передаются во внешние
-                нейросети (OpenAI и др.).
+                <strong>Privacy:</strong> Данные не передаются во внешние публичные
+                нейросети.
               </li>
               <li>
-                <strong>Integrations:</strong> Нативная поддержка 1С, Outlook,
-                Exchange, SMB-папок.
+                <strong>Integrations:</strong> Поддержка 1С, Outlook, Exchange,
+                SMB-папок и других корпоративных источников.
               </li>
             </ul>
           </div>
 
           <div style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "16px", color: "#4f46e5" }}>
-              6. Инфографика: До и После
+              9. До и После
             </h2>
             <div
               style={{ width: "100%", minHeight: "256px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e2e8f0", overflow: "hidden", position: "relative", backgroundColor: "#f1f5f9" }}
@@ -723,18 +879,15 @@ export function Calculator() {
                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "16px", width: "100%" }}>
                   <div style={{ flex: "1 1 240px", minWidth: "220px", backgroundColor: "#fee2e2", padding: "16px", borderRadius: "8px", border: "1px solid #fca5a5" }}>
                     <h4 style={{ color: "#991b1b", fontWeight: "bold", marginBottom: "8px" }}>До внедрения</h4>
-                    <p style={{ color: "#7f1d1d", fontSize: "14px" }}>Долгий поиск, разрозненные источники, потеря контекста и зависимость от отдельных сотрудников.</p>
+                    <p style={{ color: "#7f1d1d", fontSize: "14px" }}>Долгий поиск, разрозненные источники, потеря контекста, ручное заполнение карточек, ручные сверки и зависимость от памяти отдельных сотрудников.</p>
                   </div>
                   <div style={{ flex: "1 1 240px", minWidth: "220px", backgroundColor: "#d1fae5", padding: "16px", borderRadius: "8px", border: "1px solid #6ee7b7" }}>
                     <h4 style={{ color: "#065f46", fontWeight: "bold", marginBottom: "8px" }}>После внедрения</h4>
-                    <p style={{ color: "#064e3b", fontSize: "14px" }}>Единая точка доступа, мгновенные ответы, сохранение знаний, автоматизация рутины.</p>
+                    <p style={{ color: "#064e3b", fontSize: "14px" }}>Единая точка доступа к данным, быстрые ответы, сохранение знаний, автоматическое извлечение реквизитов и меньше ручной работы с документами.</p>
                   </div>
                 </div>
               </div>
             </div>
-            <p style={{ fontSize: "12px", marginTop: "8px", textAlign: "right", color: "#94a3b8" }}>
-              Автор: Система ИИ Коллектив
-            </p>
           </div>
 
             <div
@@ -744,17 +897,17 @@ export function Calculator() {
                 Следующий шаг: Бесплатный Пилот (Proof of Concept)
               </h2>
               <p style={{ fontSize: "14px", marginBottom: "8px" }}>
-                Для подтверждения расчетных цифр предлагается проведение пилотного
-                проекта на ограниченном массиве данных (1-2 департамента):
+                Для подтверждения расчетов предлагаем пилот на ограниченном массиве
+                данных:
               </p>
               <ul style={{ paddingLeft: "20px", fontSize: "14px", marginBottom: "16px" }}>
                 <li>
                   <strong>Срок:</strong> 14 дней.
                 </li>
                 <li>
-                  <strong>Результат:</strong> Отчет о фактическом сокращении
-                  времени на поиск и точности ответов ИИ на реальных документах
-                  компании.
+                  <strong>Результат:</strong> отчет по фактическому сокращению времени
+                  на поиск, качеству извлечения данных и применимости на реальных
+                  документах компании.
                 </li>
               </ul>
             </div>
@@ -766,11 +919,11 @@ export function Calculator() {
                 Готовы обсудить ваш кейс?
               </h2>
               <p style={{ fontSize: "14px", marginBottom: "16px", color: "#475569" }}>
-                Свяжитесь с нами для проведения точного расчета стоимости внедрения и оценки эффектов для вашей компании.
+                Свяжитесь с нами для точного расчета стоимости внедрения и оценки эффекта для вашей компании.
               </p>
               <div style={{ fontSize: "16px", fontWeight: "bold", color: "#4f46e5" }}>
-                <p style={{ marginBottom: "4px" }}>Сайт: ai-kollektiv.ru</p>
-                <p>Email: hello@ai-kollektiv.ru</p>
+                <p style={{ marginBottom: "4px" }}>Сайт: Navigator.sapsan17.ru</p>
+                <p>Email: director@sapsan17.ru</p>
               </div>
             </div>
         </div>
